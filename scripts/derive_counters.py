@@ -46,6 +46,7 @@ EXCLUDED_TOP_LEVEL = {
     ".vibe",
     "docs",
     "audit",
+    "jarvis",  # standalone voice-assistant app, not a skill package
     "node_modules",
     ".github",
     ".claude",

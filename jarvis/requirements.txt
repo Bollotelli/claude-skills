@@ -1,0 +1,10 @@
+# J.A.R.V.I.S. – Kernpakete: pip install -r requirements.txt
+anthropic>=1.13,<2
+python-dotenv>=1.0
+rich>=13.7
+numpy>=1.26
+edge-tts>=7.0
+miniaudio>=1.59
+sounddevice>=0.4.6
+faster-whisper>=1.1
+tzdata; sys_platform == "win32"
