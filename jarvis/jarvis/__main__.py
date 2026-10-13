@@ -87,14 +87,19 @@ def run_assistant(settings: Settings, args: argparse.Namespace) -> int:
 
     from .app import THEME, Jarvis
     from .audio import AudioUnavailable
+    from .local_brain import LocalModelError
     from .tts import TTSError
 
     console = Console(theme=THEME)
     try:
-        jarvis = Jarvis(settings, mute=args.mute, console=console)
-    except (AudioUnavailable, TTSError) as exc:
-        console.print(f"{exc}\nIch antworte vorerst nur als Text.", style="warn", markup=False)
-        jarvis = Jarvis(settings, mute=True, console=console)
+        try:
+            jarvis = Jarvis(settings, mute=args.mute, console=console)
+        except (AudioUnavailable, TTSError) as exc:
+            console.print(f"{exc}\nIch antworte vorerst nur als Text.", style="warn", markup=False)
+            jarvis = Jarvis(settings, mute=True, console=console)
+    except LocalModelError as exc:
+        console.print(str(exc), style="err", markup=False)
+        return 1
     try:
         if args.text:
             jarvis.run_text()

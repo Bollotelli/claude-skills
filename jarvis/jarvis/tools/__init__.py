@@ -21,6 +21,7 @@ from .reminders import Reminders, parse_time
 from .skills import SkillLibrary
 from .tasks import TaskList
 from .weather import Weather
+from .web import WebError, WebSearch
 
 
 class ToolError(Exception):
@@ -34,6 +35,7 @@ class Tool:
     schema: dict
     handler: Callable[[dict], str]
     slow: bool = False  # Jarvis says a short filler line while it runs
+    web: bool = False  # free web tool, only for the local brain (Claude searches server-side)
 
 
 def _obj(properties: dict, required: tuple[str, ...] = ()) -> dict:
@@ -100,17 +102,29 @@ class Toolbox:
         self.reminders = Reminders(data / "erinnerungen.json", settings.tz())
         self.skills = SkillLibrary(settings.skills_dir)
         self.weather = Weather(settings.location)
+        self.web = WebSearch(f"{settings.country.lower()}-{settings.language.lower()}")
         self._tools = {tool.name: tool for tool in self._build()}
 
     # -- what Claude sees ---------------------------------------------------
 
-    def definitions(self) -> list[dict]:
-        # No eager_input_streaming: tool inputs are never shown or spoken, and
-        # buffered inputs arrive validated, so a malformed call can't force a
-        # re-issued turn that would repeat sentences already spoken aloud.
+    def definitions(self, include_web: bool = False) -> list[dict]:
+        """Tool definitions in Claude's format.
+
+        No eager_input_streaming: tool inputs are never shown or spoken, and
+        buffered inputs arrive validated, so a malformed call can't force a
+        re-issued turn that would repeat sentences already spoken aloud.
+        """
         return [
             {"name": tool.name, "description": tool.description, "input_schema": tool.schema}
             for tool in self._tools.values()
+            if include_web or not tool.web
+        ]
+
+    def function_definitions(self) -> list[dict]:
+        """The same tools in the function-calling format of Ollama / open models."""
+        return [
+            {"type": "function", "function": {"name": d["name"], "description": d["description"], "parameters": d["input_schema"]}}
+            for d in self.definitions(include_web=True)
         ]
 
     def is_slow(self, name: str) -> bool:
@@ -232,6 +246,24 @@ class Toolbox:
         if not webbrowser.open(url):
             raise ToolError("Auf diesem Gerät konnte kein Browser geöffnet werden.")
         return f"Im Browser geöffnet: {url}"
+
+    def _web_search(self, args: dict) -> str:
+        try:
+            return self.web.search(args["query"], args.get("max_results", 5))
+        except WebError as exc:
+            raise ToolError(str(exc)) from exc
+
+    def _news_search(self, args: dict) -> str:
+        try:
+            return self.web.news(args["query"])
+        except WebError as exc:
+            raise ToolError(str(exc)) from exc
+
+    def _read_webpage(self, args: dict) -> str:
+        try:
+            return self.web.read(args["url"].strip())
+        except WebError as exc:
+            raise ToolError(str(exc)) from exc
 
     def _find_skills(self, args: dict) -> str:
         if not self.skills.index():
@@ -356,6 +388,35 @@ class Toolbox:
                 "open, show or start a website or online service (e.g. YouTube search results, a map, a news site).",
                 _obj({"url": {**text, "description": "Full URL starting with https://"}}, ("url",)),
                 self._open_website,
+            ),
+            Tool(
+                "web_search",
+                "Search the web for current information: news, prices, opening hours, events and facts that "
+                "may be newer than your knowledge. Returns titles, snippets and links; open the most promising "
+                "result with read_webpage when the snippets are not enough.",
+                _obj({
+                    "query": {**text, "description": "Search words, e.g. 'Gründerzuschuss 2026 Voraussetzungen'."},
+                    "max_results": {"type": "integer", "minimum": 1, "maximum": 10},
+                }, ("query",)),
+                self._web_search,
+                slow=True,
+                web=True,
+            ),
+            Tool(
+                "news_search",
+                "Find recent news articles about a topic. Call this when the user asks what is new or happening.",
+                _obj({"query": text}, ("query",)),
+                self._news_search,
+                slow=True,
+                web=True,
+            ),
+            Tool(
+                "read_webpage",
+                "Read the text of a web page, e.g. a search result, to answer from its content.",
+                _obj({"url": {**text, "description": "Full URL starting with https://"}}, ("url",)),
+                self._read_webpage,
+                slow=True,
+                web=True,
             ),
             Tool(
                 "find_skills",

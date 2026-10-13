@@ -14,6 +14,7 @@ from rich.theme import Theme
 from .audio import AudioUnavailable, Microphone, Player, WakeWord, chime
 from .brain import Brain, Refusal
 from .config import Settings
+from .local_brain import LocalBrain, LocalModelError
 from .speech import SentenceChunker, SilentSpeaker, Speaker
 from .tools import Toolbox
 from .tts import create_tts
@@ -50,7 +51,7 @@ class Jarvis:
         self.settings = settings
         self.console = console or Console(theme=THEME)
         self.toolbox = Toolbox(settings)
-        self.brain = Brain(settings, self.toolbox)
+        self.brain = LocalBrain(settings, self.toolbox) if settings.is_local else Brain(settings, self.toolbox)
         tts = None if mute else create_tts(settings)
         if tts is None:
             self.speaker = SilentSpeaker()
@@ -79,7 +80,7 @@ class Jarvis:
         if isinstance(self.speaker, SilentSpeaker):
             voice = "aus"
         self.console.print(Panel.fit(
-            f"[jarvis]J.A.R.V.I.S.[/]\n[hint]Modell {self.settings.model} · Stimme {voice} · Modus {mode}[/]",
+            f"[jarvis]J.A.R.V.I.S.[/]\n[hint]Gehirn {escape(self.brain.label)} · Stimme {voice} · Modus {mode}[/]",
             border_style="cyan",
         ))
 
@@ -127,7 +128,9 @@ class Jarvis:
             self._report_error(exc)
 
     def _report_error(self, exc: Exception) -> None:
-        if isinstance(exc, TypeError) and "authentication" in str(exc):
+        if isinstance(exc, LocalModelError):
+            detail, spoken = str(exc), "Mein lokales Sprachmodell ist nicht bereit. Details stehen im Terminal."
+        elif isinstance(exc, TypeError) and "authentication" in str(exc):
             detail, spoken = "Kein API-Schlüssel gefunden: ANTHROPIC_API_KEY in jarvis/.env eintragen.", "Mir fehlt der API-Schlüssel."
         elif isinstance(exc, anthropic.AuthenticationError):
             detail, spoken = "Der API-Schlüssel wurde abgelehnt. Bitte ANTHROPIC_API_KEY prüfen.", "Mein API-Schlüssel wurde abgelehnt."
@@ -158,12 +161,15 @@ class Jarvis:
             self.console.print("[hint]Neues Gespräch begonnen.[/]")
         elif cmd == "/kosten":
             u = self.brain.usage
-            cost = u.cost(self.settings.model)
-            cost_txt = f" ≈ {cost:.3f} USD" if cost is not None else ""
-            self.console.print(
-                f"[hint]Tokens: {u.input} Eingabe, {u.cache_read} aus Cache, {u.cache_write} in Cache, "
-                f"{u.output} Ausgabe · {u.searches} Websuchen{cost_txt}[/]"
-            )
+            if self.settings.is_local:
+                self.console.print(f"[hint]Lokal und kostenlos: {u.input} Tokens gelesen, {u.output} geschrieben.[/]")
+            else:
+                cost = u.cost(self.settings.model)
+                cost_txt = f" ≈ {cost:.3f} USD" if cost is not None else ""
+                self.console.print(
+                    f"[hint]Tokens: {u.input} Eingabe, {u.cache_read} aus Cache, {u.cache_write} in Cache, "
+                    f"{u.output} Ausgabe · {u.searches} Websuchen{cost_txt}[/]"
+                )
         elif cmd in ("/gedaechtnis", "/gedächtnis"):
             facts = self.toolbox.memory.all()
             if not facts:

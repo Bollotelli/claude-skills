@@ -31,10 +31,11 @@ as acceptance gates. It is excluded from headline counters by
 In-repo references to paths under these folders (e.g. `documentation/implementation/...`) resolve locally for the maintainer but appear as dead links on GitHub. This is intentional.
 
 **Standalone app, not a skill:** `jarvis/` is a German-speaking voice assistant
-(Claude + speech in/out) that uses the skill library as its business knowledge
-base. As an application it calls the Claude API and has third-party
-dependencies by design, so the skill rules below (stdlib-only, no LLM calls) do
-not apply to it. It is excluded from headline counters and the `--help` smoke
+(speech in/out) that uses the skill library as its business knowledge base. Its
+brain is a free local model via Ollama by default (the user requires a
+completely free setup), with the Claude API as an optional paid upgrade. As an
+application it calls LLMs and has third-party dependencies by design, so the
+skill rules below (stdlib-only, no LLM calls) do not apply to it. It is excluded from headline counters and the `--help` smoke
 gates; verify changes with `cd jarvis && python -m jarvis selbsttest` (offline,
 no API costs). User-facing text there is German.
 
@@ -58,7 +59,7 @@ This repository uses **modular documentation**. For domain-specific guidance, se
 | **Markdown → HTML** | [markdown-html/CLAUDE.md](markdown-html/CLAUDE.md) | Markdown-to-interactive-HTML converter (orchestrator + design-system foundation; md-document/review/slides v2.10.1). Inspired by Shihipar's "Claude Code HTML output" essay |
 | **Standards Library** | [standards/CLAUDE.md](standards/CLAUDE.md) | Communication, quality, git, security standards |
 | **Templates** | [templates/CLAUDE.md](templates/CLAUDE.md) | Template system usage |
-| **Jarvis (app)** | [jarvis/README.md](jarvis/README.md) | Voice assistant on Claude: streaming tool loop, TTS/STT, wake word (German docs) |
+| **Jarvis (app)** | [jarvis/README.md](jarvis/README.md) | Free voice assistant (local Ollama brain, optional Claude): tool loop, TTS/STT, wake word (German docs) |
 
 ## Architecture Overview
 

@@ -114,6 +114,10 @@ class Brain:
         self._last_turn = 0.0
         self.new_conversation()
 
+    @property
+    def label(self) -> str:
+        return f"{self.settings.model} (Claude)"
+
     def new_conversation(self) -> None:
         """Start fresh; freezes system prompt (with current memories) and tools."""
         self.messages = []

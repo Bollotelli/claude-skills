@@ -1,4 +1,6 @@
-# J.A.R.V.I.S. – Kernpakete: pip install -r requirements.txt
+# J.A.R.V.I.S. – alle Pakete sind kostenlos: pip install -r requirements.txt
+ollama>=0.5
+ddgs>=9.0
 anthropic>=1.13,<2
 python-dotenv>=1.0
 rich>=13.7

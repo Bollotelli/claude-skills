@@ -1,7 +1,8 @@
 """``python -m jarvis selbsttest``: offline checks, no API key, no costs.
 
-Covers the tools, the sentence chunker and a full conversation turn through
-the real Anthropic SDK against a local fake of the streaming Messages API.
+Covers the tools, the sentence chunker and full conversation turns for both
+brains: through the real ``ollama`` client against a local fake of Ollama's
+chat API, and through the real Anthropic SDK against a fake Messages API.
 """
 
 from __future__ import annotations
@@ -48,6 +49,55 @@ class FakeMessagesAPI:
 
     def close(self) -> None:
         self.server.shutdown()
+
+
+class FakeOllama:
+    """Serves scripted NDJSON chat streams (or HTTP errors) like a local Ollama."""
+
+    def __init__(self, responses: list):
+        self.responses = list(responses)
+        self.requests: list[dict] = []
+        api = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                length = int(self.headers.get("content-length", 0))
+                api.requests.append(json.loads(self.rfile.read(length)))
+                reply = api.responses.pop(0)
+                if isinstance(reply, dict):  # {"status": 404, "error": "..."}
+                    body = json.dumps({"error": reply["error"]}).encode()
+                    self.send_response(reply["status"])
+                    self.send_header("content-type", "application/json")
+                    self.send_header("content-length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                self.send_response(200)
+                self.send_header("content-type", "application/x-ndjson")
+                self.end_headers()
+                for line in reply:
+                    self.wfile.write((json.dumps(line) + "\n").encode())
+
+            def log_message(self, *args):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}"
+
+    def close(self) -> None:
+        self.server.shutdown()
+
+
+def ollama_stream(pieces: list[str], tool_calls: list[tuple[str, dict]] | None = None) -> list[dict]:
+    base = {"model": "qwen3:8b", "created_at": "2026-10-14T08:00:00Z"}
+    lines = [{**base, "message": {"role": "assistant", "content": p}, "done": False} for p in pieces]
+    if tool_calls:
+        calls = [{"function": {"name": name, "arguments": args}} for name, args in tool_calls]
+        lines.append({**base, "message": {"role": "assistant", "content": "", "tool_calls": calls}, "done": False})
+    lines.append({**base, "message": {"role": "assistant", "content": ""}, "done": True,
+                  "done_reason": "stop", "prompt_eval_count": 900, "eval_count": 25})
+    return lines
 
 
 def sse_message(blocks: list[dict], stop_reason: str) -> list[dict]:
@@ -213,6 +263,113 @@ def check_echo_content() -> None:
     assert echo_content(blocks[:3]) == blocks[:3]
 
 
+def check_free_web(data_dir: Path) -> None:
+    from .config import Settings
+    from .tools import Toolbox, web
+
+    class RatelimitException(Exception):
+        pass
+
+    class FakeDDGS:
+        def text(self, query, region, max_results):
+            assert region == "de-de"
+            return [{"title": "Gründerzuschuss", "body": "Voraussetzungen 2026", "href": "https://example.org/gz"}]
+
+        def news(self, query, region, max_results):
+            raise RatelimitException("202 Ratelimit")
+
+        def extract(self, url, fmt):
+            return {"url": url, "content": "Seiteninhalt " * 1000}
+
+    original = web._ddgs
+    web._ddgs = lambda: FakeDDGS()
+    try:
+        toolbox = Toolbox(Settings(data_dir=data_dir))
+        found = toolbox.run("web_search", "t", {"query": "Gründerzuschuss"})
+        assert "1. Gründerzuschuss: Voraussetzungen 2026 (https://example.org/gz)" == found["content"], found
+        busy = toolbox.run("news_search", "t", {"query": "KI"})
+        assert busy["is_error"] and "überlastet" in busy["content"], busy
+        page = toolbox.run("read_webpage", "t", {"url": "https://example.org/gz"})["content"]
+        assert page.endswith("Zeichen]") and len(page) < 6100, len(page)
+        assert toolbox.run("read_webpage", "t", {"url": "ftp://x"})["is_error"]
+    finally:
+        web._ddgs = original
+
+
+def check_think_filter() -> None:
+    from .local_brain import ThinkFilter
+
+    stream = ["<thi", "nk>\nplanning", " more</th", "ink>\n\nGuten ", "Morgen.", " <b>"]
+    for size in (1, 3, None):  # deliver char by char, in small chunks, and as given
+        chunks = list("".join(stream)) if size == 1 else (
+            ["".join(stream)[i:i + 3] for i in range(0, len("".join(stream)), 3)] if size == 3 else stream)
+        f = ThinkFilter()
+        out = "".join(f.feed(c) for c in chunks) + f.flush()
+        assert out == "\n\nGuten Morgen. <b>", (size, out)
+
+
+def check_local_conversation(data_dir: Path) -> None:
+    import ollama
+
+    from .config import Settings
+    from .local_brain import LocalBrain, LocalModelError
+    from .tools import Toolbox
+
+    fake = FakeOllama([
+        {"status": 400, "error": 'registry.ollama.ai/library/qwen3:8b does not support thinking'},
+        ollama_stream(["<think>\n", "hmm</think>", "\n\nSehr ", "wohl."], [("add_task", {"title": "Steuerberater anrufen"})]),
+        ollama_stream(["Ist ", "notiert."]),
+        {"status": 404, "error": "model 'qwen3:8b' not found"},
+    ])
+    try:
+        settings = Settings(data_dir=data_dir)
+        toolbox = Toolbox(settings)
+        client = ollama.Client(host=fake.url, trust_env=False)
+        brain = LocalBrain(settings, toolbox, client=client)
+        tools_used = []
+        reply = brain.respond("Notier bitte: Steuerberater anrufen", lambda t: None, lambda n, s: tools_used.append(n))
+        assert reply == "Sehr wohl. Ist notiert.", repr(reply)
+        assert tools_used == ["add_task"], tools_used
+        assert any(t["title"] == "Steuerberater anrufen" for t in toolbox.tasks.list())
+
+        first, retry, second = fake.requests[0], fake.requests[1], fake.requests[2]
+        assert first["think"] is False and "think" not in retry, "think must be dropped after the 400"
+        assert retry["model"] == "qwen3:8b" and retry["stream"] is True
+        assert retry["options"]["num_ctx"] == settings.ollama_ctx
+        names = [t["function"]["name"] for t in retry["tools"]]
+        assert "web_search" in names and "read_webpage" in names and len(names) == len(set(names)), names
+        assert [m["role"] for m in retry["messages"]] == ["system", "user"]
+        assert retry["messages"][1]["content"].startswith("[Aktuelle Zeit")
+        roles = [m["role"] for m in second["messages"]]
+        assert roles == ["system", "user", "assistant", "tool"], roles
+        assert second["messages"][2]["tool_calls"][0]["function"]["name"] == "add_task"
+        assert second["messages"][3]["tool_name"] == "add_task" and "#1" in second["messages"][3]["content"]
+        assert brain.usage.cost(settings.ollama_model) == 0.0
+
+        before = list(brain.messages)
+        try:
+            brain.respond("Hallo?", lambda t: None)
+            raise AssertionError("missing model was not reported")
+        except LocalModelError as exc:
+            assert "ollama pull qwen3:8b" in str(exc), exc
+        assert brain.messages == before, "a failed turn must be rolled back"
+    finally:
+        fake.close()
+
+    # Ollama not running at all
+    import socket
+
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        closed_port = sock.getsockname()[1]
+    offline = LocalBrain(settings, toolbox, client=ollama.Client(host=f"http://127.0.0.1:{closed_port}", trust_env=False))
+    try:
+        offline.respond("Hallo?", lambda t: None)
+        raise AssertionError("unreachable Ollama was not reported")
+    except LocalModelError as exc:
+        assert "Ollama läuft nicht" in str(exc), exc
+
+
 def check_conversation(data_dir: Path) -> None:
     import anthropic
 
@@ -254,6 +411,8 @@ def check_conversation(data_dir: Path) -> None:
         assert body["messages"][-1]["role"] == "system" and "Aktuelle Zeit" in body["messages"][-1]["content"]
         assert any(t.get("type") == "web_search_20260209" for t in body["tools"])
         assert all(set(t) == {"name", "description", "input_schema"} for t in body["tools"] if "input_schema" in t)
+        tool_names = [t["name"] for t in body["tools"]]
+        assert len(tool_names) == len(set(tool_names)), "duplicate tool names"
 
         history = second["body"]["messages"]
         assert [m["role"] for m in history] == ["user", "system", "assistant", "user"], history
@@ -283,7 +442,10 @@ CHECKS = [
     ("Wetter-Zusammenfassung", lambda d: check_weather_format()),
     ("Audio-Hilfen (WAV, Whisper-Filter)", lambda d: check_audio_helpers()),
     ("Verlauf nach Modellwechsel (Fallback)", lambda d: check_echo_content()),
-    ("Gespräch mit Werkzeug über das Claude-SDK", check_conversation),
+    ("Kostenlose Websuche (Format & Fehler)", check_free_web),
+    ("<think>-Filter für lokale Modelle", lambda d: check_think_filter()),
+    ("Kostenloses Gehirn: Gespräch mit Werkzeug über Ollama", check_local_conversation),
+    ("Claude-Gehirn: Gespräch mit Werkzeug über das SDK", check_conversation),
 ]
 
 

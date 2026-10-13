@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .config import APP_DIR, Settings
+from .local_brain import _is_local_host
 
 OK, FAIL, OPTIONAL = "[green]✓[/]", "[red]✗[/]", "[yellow]–[/]"
 
@@ -22,20 +23,30 @@ def _module(name: str):
         return None
 
 
-def run_checks(settings: Settings, online: bool = False) -> list[tuple[str, str, str]]:
-    rows: list[tuple[str, str, str]] = []
+def check_local_brain(settings: Settings, add) -> None:
+    ollama = _module("ollama")
+    if ollama is None:
+        add(FAIL, "Gehirn (Ollama)", "Paket fehlt – pip install -r requirements.txt")
+        return
+    try:
+        extra = {"trust_env": False} if _is_local_host(settings.ollama_host) else {}
+        names = [m.model or "" for m in ollama.Client(host=settings.ollama_host or None, **extra).list().models]
+    except Exception:
+        add(FAIL, "Gehirn (Ollama)", "Ollama läuft nicht – installieren: https://ollama.com/download, dann die App starten")
+        return
+    wanted = settings.ollama_model
+    if wanted in names or f"{wanted}:latest" in names:
+        add(OK, "Gehirn (lokal, kostenlos)", f"{wanted} bereit")
+    else:
+        add(FAIL, "Gehirn (lokal, kostenlos)", f"Modell fehlt – einmalig: ollama pull {wanted}")
+    add(OPTIONAL, "API-Schlüssel", "nicht nötig: das lokale Gehirn ist kostenlos")
 
-    def add(status: str, label: str, detail: str = "") -> None:
-        rows.append((status, label, detail))
 
-    py = sys.version_info
-    add(OK if py >= (3, 10) else FAIL, "Python", f"{py.major}.{py.minor}" + ("" if py >= (3, 10) else " – bitte 3.10 bis 3.12 installieren"))
-
+def check_claude(settings: Settings, online: bool, add) -> None:
     anthropic = _module("anthropic")
     version = getattr(anthropic, "__version__", "")
     major = int(version.split(".")[0]) if version[:1].isdigit() else 0
     add(OK if major >= 1 else FAIL, "Claude-SDK (anthropic)", version or "fehlt – pip install -r requirements.txt")
-
     key = os.environ.get("ANTHROPIC_API_KEY", "")
     profile = Path.home() / ".config" / "anthropic"
     if key:
@@ -51,6 +62,22 @@ def run_checks(settings: Settings, online: bool = False) -> list[tuple[str, str,
             add(OK, "Verbindung zu Claude", f"{model.id} erreichbar")
         except Exception as exc:
             add(FAIL, "Verbindung zu Claude", f"{type(exc).__name__}: {str(exc)[:120]}")
+
+
+def run_checks(settings: Settings, online: bool = False) -> list[tuple[str, str, str]]:
+    rows: list[tuple[str, str, str]] = []
+
+    def add(status: str, label: str, detail: str = "") -> None:
+        rows.append((status, label, detail))
+
+    py = sys.version_info
+    add(OK if py >= (3, 10) else FAIL, "Python", f"{py.major}.{py.minor}" + ("" if py >= (3, 10) else " – bitte 3.10 bis 3.12 installieren"))
+
+    if settings.is_local:
+        check_local_brain(settings, add)
+        add(OK if _module("ddgs") else FAIL, "Websuche (kostenlos)", "DuckDuckGo & Co." if _module("ddgs") else "pip install ddgs")
+    else:
+        check_claude(settings, online, add)
 
     tts_modules = {"edge": "edge_tts", "elevenlabs": "httpx2", "piper": "piper"}
     if settings.tts in ("none", "aus", "off"):
@@ -95,6 +122,18 @@ def run_checks(settings: Settings, online: bool = False) -> list[tuple[str, str,
         add(OK, "Datenordner", str(settings.data_dir))
     except OSError as exc:
         add(FAIL, "Datenordner", f"{settings.data_dir}: {exc}")
+
+    paid = []
+    if not settings.is_local:
+        paid.append("Claude-API")
+    if settings.tts == "elevenlabs":
+        paid.append("ElevenLabs-Stimme")
+    if settings.stt == "openai":
+        paid.append("OpenAI-Spracherkennung")
+    if paid:
+        add(OPTIONAL, "Kosten", "kostenpflichtig: " + ", ".join(paid))
+    else:
+        add(OK, "Kosten", "komplett kostenlos")
 
     from .tools.skills import SkillLibrary
 

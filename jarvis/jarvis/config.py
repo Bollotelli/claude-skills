@@ -1,7 +1,7 @@
 """Settings, read from environment variables and an optional ``.env`` file.
 
-Every option has a sensible default, so Jarvis runs with nothing but an
-``ANTHROPIC_API_KEY``. See ``.env.example`` for the documented list.
+Every option has a sensible default. Out of the box everything is free: the
+brain is a local model via Ollama. See ``.env.example`` for the full list.
 """
 
 from __future__ import annotations
@@ -58,7 +58,11 @@ def load_env_file() -> None:
 
 @dataclass
 class Settings:
-    # Brain (Claude)
+    # Brain: "local" = free open model via Ollama, "claude" = Claude API (paid)
+    brain: str = "local"
+    ollama_model: str = "qwen3:8b"
+    ollama_host: str = ""  # empty = OLLAMA_HOST or http://localhost:11434
+    ollama_ctx: int = 12288  # context window in tokens; more needs more RAM
     model: str = "claude-opus-5-5"
     effort: str = "low"  # low keeps spoken replies snappy; medium/high think longer
     max_tokens: int = 64000
@@ -99,6 +103,10 @@ class Settings:
         load_env_file()
         d = cls()
         return cls(
+            brain=_env("JARVIS_BRAIN", d.brain).lower(),
+            ollama_model=_env("JARVIS_OLLAMA_MODEL", d.ollama_model),
+            ollama_host=_env("OLLAMA_HOST"),
+            ollama_ctx=_env_int("JARVIS_OLLAMA_CTX", d.ollama_ctx),
             model=_env("JARVIS_MODEL", d.model),
             effort=_env("JARVIS_EFFORT", d.effort),
             max_tokens=_env_int("JARVIS_MAX_TOKENS", d.max_tokens),
@@ -126,6 +134,10 @@ class Settings:
             data_dir=Path(_env("JARVIS_DATA_DIR", str(d.data_dir))).expanduser(),
             skills_dir=Path(_env("JARVIS_SKILLS_DIR", str(d.skills_dir))).expanduser(),
         )
+
+    @property
+    def is_local(self) -> bool:
+        return self.brain != "claude"
 
     def tz(self) -> tzinfo:
         """Configured time zone, falling back to the computer's local zone."""

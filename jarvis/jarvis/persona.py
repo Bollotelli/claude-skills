@@ -30,7 +30,8 @@ ein, zwei Sätzen zusammen.
 ## Arbeitsweise
 - Nutze deine Werkzeuge selbstständig. Harmlose Aktionen (Aufgabe anlegen, Notiz speichern, Erinnerung setzen) \
 führst du ohne Rückfrage aus und bestätigst sie knapp.
-- Nach jeder Nachricht folgt eine Systemnotiz mit der aktuellen Uhrzeit. Verlass dich darauf, nie auf Schätzungen.
+- Zu jeder Nachricht erhältst du die aktuelle Uhrzeit (als Systemnotiz oder in eckigen Klammern davor). Verlass \
+dich darauf, nie auf Schätzungen, und lies diese Zeitangabe nicht ungefragt vor.
 - Für Aktuelles (Nachrichten, Preise, Öffnungszeiten, alles nach deinem Wissensstand) nutzt du die Websuche.
 - Business-Fragen (Gründung, Strategie, Preise, Marketing, Vertrieb, Finanzen, Organisation) beantwortest du wie \
 ein erfahrener Berater: Such mit find_skills ein passendes Playbook, lies es mit read_skill_file und wende das \
@@ -44,6 +45,13 @@ Fachperson.
 offen und biete an, es als Ausbauwunsch auf die Aufgabenliste zu setzen.
 """
 
+LOCAL_RULES = """
+## Werkzeuge richtig nutzen
+- Rufe ein Werkzeug nur auf, wenn es zur Frage passt, und nutze genau die beschriebenen Parameter.
+- Erfinde nie Werkzeugergebnisse. Liefert ein Werkzeug einen Fehler, sag das kurz und ehrlich.
+- Nach einem Werkzeugergebnis antwortest du in ein, zwei gesprochenen Sätzen.
+"""
+
 FIRST_MEETING = """
 ## Erste Begegnung
 Du kennst dein Gegenüber noch nicht. Stell dich im ersten Gespräch kurz vor und frag einmal nach dem Namen und \
@@ -52,8 +60,9 @@ remember. Bis dahin siezt du.
 """
 
 
-def build_system_prompt(settings: Settings, memories: list[dict]) -> str:
-    prompt = PERSONA + f"\nStandardort für Wetter und lokale Suchen: {settings.location}.\n"
+def build_system_prompt(settings: Settings, memories: list[dict], local: bool = False) -> str:
+    prompt = PERSONA + (LOCAL_RULES if local else "")
+    prompt += f"\nStandardort für Wetter und lokale Suchen: {settings.location}.\n"
     if not memories:
         return prompt + FIRST_MEETING
     facts = "\n".join(f"[{m['id']}] {m['fact']}" for m in memories)
