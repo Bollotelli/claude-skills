@@ -557,6 +557,7 @@ When I correct you, or you catch yourself making a mistake: before continuing ad
 ## Lessons
 
 - (Claude adds rules here)
+- Write every user-facing message in the user's language (German for the Jarvis work), including short mid-task status updates; never switch to English.
 
 ## Additional Resources
 
