@@ -17,7 +17,7 @@ from .reminders import Reminders
 from .storage import JsonStore
 
 COMMISSION = 0.05  # Cardmarket fee table: 5 % of the article price, private and professional sellers
-REGISTERED_FROM = 25.0  # Cardmarket requires registered shipping above this order value
+REGISTERED_FROM = 25.0  # Cardmarket requires registered shipping for orders worth more than this
 REMIND_HOUR = 9  # shipping reminders go off at 9:00 on the deadline day
 LONG_IN_TRANSIT = 14  # days after which a shipped order without arrival gets flagged
 
@@ -107,14 +107,14 @@ class SalesBook:
         ship_by = ship_by or deadline(now.date(), self.ship_days)
         warnings = []
         method = shipping_method(method)
-        if price > REGISTERED_FROM and method == "Brief":
+        if price > REGISTERED_FROM and method not in ("Einschreiben", "Paket"):
             warnings.append(
                 f"Über {euro(REGISTERED_FROM)} Warenwert schreibt Cardmarket versicherten Versand (Einschreiben) "
                 "vor – prüf die Versandart in der Bestellung."
             )
         with self.store.lock:
             orders = self.store.load()
-            order_no = order_no.strip()
+            order_no = order_no.strip().lstrip("#").strip()
             if order_no and any(o.get("order_no") == order_no for o in orders):
                 raise ValueError(f"Die Cardmarket-Bestellung {order_no} ist schon eingetragen.")
             order = {
@@ -134,19 +134,26 @@ class SalesBook:
                 "reminder_id": None,
                 "note": note.strip(),
             }
-            remind_at = datetime(ship_by.year, ship_by.month, ship_by.day, REMIND_HOUR, tzinfo=self.tz)
-            if ship_by < now.date():
+            if not self._schedule(order, now):
                 warnings.append("Die Versandfrist ist schon vorbei – am besten sofort verschicken.")
-            else:
-                if remind_at <= now:  # due today and 9:00 is over
-                    remind_at = now + timedelta(hours=1)
-                reminder = self.reminders.add(
-                    f"Cardmarket: {self.label(order)} muss heute verschickt werden ({order['items']}).", remind_at
-                )
-                order["reminder_id"] = reminder["id"]
             orders.append(order)
             self.store.save(orders)
             return order, warnings
+
+    def _schedule(self, order: dict, now: datetime) -> bool:
+        """Set the deadline reminder (9:00 on the deadline day); False if the deadline has passed."""
+        ship_by = date.fromisoformat(order["ship_by"])
+        if ship_by < now.date():
+            return False
+        remind_at = datetime(ship_by.year, ship_by.month, ship_by.day, REMIND_HOUR, tzinfo=self.tz)
+        if remind_at <= now:  # due today and 9:00 is over
+            remind_at = now + timedelta(hours=1)
+        day = f"{timefmt.WEEKDAYS[ship_by.weekday()]}, {ship_by.day}.{ship_by.month}."
+        reminder = self.reminders.add(
+            f"Cardmarket: {self.label(order)} muss bis {day} verschickt werden ({order['items']}).", remind_at
+        )
+        order["reminder_id"] = reminder["id"]
+        return True
 
     def update(
         self,
@@ -157,12 +164,12 @@ class SalesBook:
         note: str | None = None,
     ) -> dict:
         tracking = (tracking or "").strip()
-        if status is None and tracking:
-            status = "versendet"
         with self.store.lock:
             orders = self.store.load()
             prefer = ("versendet", "offen") if status == "angekommen" else ("offen", "versendet")
             order = self.find(orders, ref, prefer)
+            if status is None and tracking and order.get("status") == "offen":
+                status = "versendet"  # a tracking number added later must not undo "angekommen"
             if tracking:
                 order["tracking"] = tracking
             if postage is not None:
@@ -170,10 +177,15 @@ class SalesBook:
             if note:
                 order["note"] = f"{order['note']}; {note.strip()}" if order.get("note") else note.strip()
             if status:
+                now = self._now()
                 order["status"] = status
                 if status == "versendet" and not order.get("shipped"):
-                    order["shipped"] = self._now().date().isoformat()
-                if status != "offen" and order.get("reminder_id"):
+                    order["shipped"] = now.date().isoformat()
+                if status == "offen":  # reopened, e.g. after marking the wrong order
+                    order["shipped"] = None
+                    if not order.get("reminder_id"):
+                        self._schedule(order, now)
+                elif order.get("reminder_id"):
                     self.reminders.cancel(order["reminder_id"])
                     order["reminder_id"] = None
             self.store.save(orders)
@@ -183,7 +195,12 @@ class SalesBook:
 
     @staticmethod
     def find(orders: list[dict], ref: str, prefer: tuple[str, ...] = ("offen", "versendet")) -> dict:
-        """Find one order by Cardmarket number, Jarvis number, buyer or card name."""
+        """Find one order by Cardmarket number, Jarvis number, buyer or card name.
+
+        Matches are tried strongest first: exact buyer, part of a buyer, part of a
+        card name. The first kind that matches decides, so "Max" never lands on a
+        "Glurak VMAX" order while Max has an order of his own.
+        """
         ref = ref.strip().lstrip("#").strip()
         for order in orders:
             if ref and order.get("order_no") == ref:
@@ -192,11 +209,17 @@ class SalesBook:
             for order in orders:
                 if order.get("id") == int(ref):
                     return order
-        needle = ref.lower()
-        hits = [
-            o for o in orders
-            if needle and (needle in o.get("buyer", "").lower() or needle in o.get("items", "").lower())
-        ]
+            raise LookupError(f"Keine Cardmarket-Bestellung mit der Nummer {ref}.")
+        needle = ref.casefold()
+        hits: list[dict] = []
+        for matches in (
+            lambda o: (o.get("buyer") or "").casefold() == needle,
+            lambda o: needle in (o.get("buyer") or "").casefold(),
+            lambda o: needle in (o.get("items") or "").casefold(),
+        ):
+            hits = [o for o in orders if needle and matches(o)]
+            if hits:
+                break
         for status in prefer:  # "Max hat bezahlt" means Max's open order, not last month's
             preferred = [o for o in hits if o.get("status") == status]
             if preferred:
@@ -247,15 +270,22 @@ class SalesBook:
     def listing(self, view: str = "zu_versenden", query: str = "") -> str:
         today = self._now().date()
         orders = self.store.load()
-        needle = query.strip().lower()
+        needle = "".join(query.split()).casefold()
         if needle:
             orders = [
                 o for o in orders
-                if any(needle in str(o.get(k) or "").lower() for k in ("buyer", "items", "order_no", "tracking"))
+                if any(
+                    needle in "".join(str(o.get(k) or "").split()).casefold()
+                    for k in ("buyer", "items", "order_no", "tracking")
+                )
             ]
+            if not orders:
+                return f"Keine Cardmarket-Bestellung passt zu „{query.strip()}“."
         if view == "zu_versenden":
             open_orders = sorted((o for o in orders if o.get("status") == "offen"), key=lambda o: o["ship_by"])
             if not open_orders:
+                if needle:
+                    return f"Keine offene Bestellung passt zu „{query.strip()}“."
                 return "Nichts zu verschicken – alle Cardmarket-Bestellungen sind raus."
             overdue = sum(date.fromisoformat(o["ship_by"]) < today for o in open_orders)
             due_today = sum(date.fromisoformat(o["ship_by"]) == today for o in open_orders)
@@ -266,7 +296,7 @@ class SalesBook:
         if view == "unterwegs":
             moving = sorted((o for o in orders if o.get("status") == "versendet"), key=lambda o: o.get("shipped") or "")
             if not moving:
-                return "Keine Sendungen unterwegs."
+                return f"Keine Sendung zu „{query.strip()}“ unterwegs." if needle else "Keine Sendungen unterwegs."
             return "\n".join([f"{count(len(moving), 'Sendung', 'Sendungen')} unterwegs:"] + [self.describe(o, today) for o in moving])
         recent = sorted(orders, key=lambda o: o["id"], reverse=True)[:30]
         if not recent:
@@ -300,7 +330,7 @@ class SalesBook:
             + (f", {len(orders) - len(sold)} storniert" if len(orders) > len(sold) else "")
             + ".",
             f"Artikelwert {euro(revenue)}, Versand von Käufern {euro(shipping)}, "
-            f"Cardmarket-Provision (5 %) {euro(fees)}.",
+            f"Cardmarket-Provision (5 %) ca. {euro(fees)}.",
         ]
         if with_postage:
             lines.append(f"Porto {euro(postage)} (bei {len(with_postage)} von {len(sold)} Bestellungen eingetragen).")

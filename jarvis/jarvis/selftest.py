@@ -263,9 +263,57 @@ def check_cardmarket(data_dir: Path) -> None:
     report = run("cardmarket_report", {})["content"]
     # 12,50 + 5,00 sold (30 € cancelled): provision 0,63 + 0,25; left 17,50 + 1,25 - 0,88 - 0,95
     assert "2 Verkäufe, 1 davon noch zu verschicken, 1 storniert" in report, report
-    assert "Provision (5 %) 0,88 €" in report and "Bleibt: 16,92 €" in report, report
+    assert "Provision (5 %) ca. 0,88 €" in report and "Bleibt: 16,92 €" in report, report
     assert run("cardmarket_report", {"month": "Oktober"})["is_error"]
     assert "noch keine" in run("cardmarket_report", {"month": "2020-01"})["content"]
+    assert "muss bis" in toolbox.reminders.store.load()[0]["text"]  # still true when announced late
+
+
+def check_cardmarket_matching(data_dir: Path) -> None:
+    from .config import Settings
+    from .tools import Toolbox
+
+    toolbox = Toolbox(Settings(data_dir=data_dir))
+
+    def run(name: str, args: dict) -> dict:
+        return toolbox.run(name, "t", args)
+
+    def pending() -> int:
+        return len(toolbox.reminders.pending())
+
+    run("cardmarket_add_order", {"items": "Pikachu 25/102", "price": 3, "buyer": "Max", "order_no": None})
+    run("cardmarket_add_order", {"items": "Glurak VMAX 020/189", "price": 8, "buyer": "Sammlerin"})
+    run("cardmarket_add_order", {"items": "Mew", "price": 4, "buyer": "Maximilian", "order_no": 1187654321})
+    assert "Cardmarket 1187654321" in run("cardmarket_orders", {"view": "alle"})["content"]  # number coerced to text
+    run("cardmarket_update_order", {"order": "1", "status": "versendet"})
+    assert pending() == 2
+
+    # a late tracking number for Max stays with Max, not with "VMAX" or "Maximilian"
+    late = run("cardmarket_update_order", {"order": "Max", "tracking": "A0 1111 2222 3DE"})["content"]
+    assert "#1 an Max" in late and pending() == 2, late
+    assert "an Maximilian" in run("cardmarket_update_order", {"order": "maxi", "note": "Stammkunde"})["content"]
+    assert "Nummer 99" in run("cardmarket_update_order", {"order": "99", "status": "versendet"})["content"]
+    assert "Max" in run("cardmarket_orders", {"view": "alle", "query": "A01111"})["content"]  # spaces ignored
+    assert "Keine offene Bestellung passt" in run("cardmarket_orders", {"query": "Pikachu"})["content"]
+    assert "Keine Cardmarket-Bestellung passt" in run("cardmarket_orders", {"query": "Niemand"})["content"]
+
+    # a tracking number added after arrival keeps "angekommen"
+    run("cardmarket_update_order", {"order": "1", "status": "angekommen"})
+    assert "angekommen" in run("cardmarket_update_order", {"order": "1", "tracking": "B22"})["content"]
+
+    # reopening (e.g. after marking the wrong order) restores the reminder and clears the ship date
+    run("cardmarket_update_order", {"order": "2", "status": "versendet"})
+    assert pending() == 1
+    reopened = run("cardmarket_update_order", {"order": "2", "status": "offen"})["content"]
+    assert "zu verschicken" in reopened and pending() == 2, reopened
+
+    # "#" in front of a Cardmarket number is ignored, so duplicates are still caught
+    run("cardmarket_add_order", {"items": "Evoli", "price": 2, "order_no": "#555"})
+    assert "Evoli" in run("cardmarket_update_order", {"order": "555", "note": "Hülle"})["content"]
+    assert run("cardmarket_add_order", {"items": "Evoli", "price": 2, "order_no": "555"})["is_error"]
+    assert "Einschreiben" in run("cardmarket_add_order", {
+        "items": "Lugia", "price": 30, "shipping_method": "Warensendung",
+    })["content"]
 
 
 def check_skills() -> None:
@@ -525,6 +573,7 @@ CHECKS = [
     ("Aufgaben, Notizen, Gedächtnis, Erinnerungen", check_tools),
     ("Trading-Notizbuch (EA FC, 5 % Steuer)", check_trading),
     ("Cardmarket: Bestellungen, Versandfrist, Monatsumsatz", check_cardmarket),
+    ("Cardmarket: richtige Bestellung finden, Statuswechsel", check_cardmarket_matching),
     ("Skill-Bibliothek durchsuchen", lambda d: check_skills()),
     ("Skill-Beschreibungen einlesen (YAML)", lambda d: check_frontmatter()),
     ("Wetter-Zusammenfassung", lambda d: check_weather_format()),

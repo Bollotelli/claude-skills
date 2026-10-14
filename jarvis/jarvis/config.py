@@ -137,7 +137,7 @@ class Settings:
             wake_threshold=_env_float("JARVIS_WAKE_THRESHOLD", d.wake_threshold),
             input_device=_env("JARVIS_INPUT_DEVICE"),
             output_device=_env("JARVIS_OUTPUT_DEVICE"),
-            cardmarket_ship_days=_env_int("JARVIS_CARDMARKET_VERSANDTAGE", d.cardmarket_ship_days),
+            cardmarket_ship_days=max(0, _env_int("JARVIS_CARDMARKET_VERSANDTAGE", d.cardmarket_ship_days)),
             data_dir=Path(_env("JARVIS_DATA_DIR", str(d.data_dir))).expanduser(),
             skills_dir=Path(_env("JARVIS_SKILLS_DIR", str(d.skills_dir))).expanduser(),
         )

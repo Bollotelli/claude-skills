@@ -95,7 +95,8 @@ def validate(value: Any, schema: dict, path: str = "input") -> str | None:
 
 
 def coerce(args: Any, schema: dict) -> Any:
-    """Repair small slips before validating: numeric strings, out-of-range numbers, unknown keys.
+    """Repair small slips before validating: numbers sent as text or text as numbers, nulls,
+    out-of-range numbers, unknown keys.
 
     Open models see only types (the ollama client drops limits like minimum or
     additionalProperties), so they are corrected here instead of rejected.
@@ -106,9 +107,11 @@ def coerce(args: Any, schema: dict) -> Any:
     fixed = {}
     for key, value in args.items():
         sub = props.get(key)
-        if sub is None:
-            continue  # unknown key
+        if sub is None or value is None:
+            continue  # unknown key, or null for "not given"
         kind = sub.get("type")
+        if kind == "string" and isinstance(value, (int, float)) and not isinstance(value, bool):
+            value = str(int(value)) if float(value).is_integer() else str(value)  # order number 1187654321
         if kind in ("integer", "number") and isinstance(value, str):
             try:  # "12,50" is how a German speaker writes 12.50
                 value = int(value) if kind == "integer" else float(value.replace(",", "."))

@@ -243,7 +243,7 @@ Sendungsnummer jeder Sendung:
 
 Die Frist ist standardmäßig zwei Tage nach dem Eintragen (fällt sie auf einen Sonntag, gilt Montag);
 ändern mit `JARVIS_CARDMARKET_VERSANDTAGE`. Über 25 € Warenwert schreibt Cardmarket Einschreiben vor –
-Jarvis weist dich darauf hin, wenn du „Brief“ sagst. Cardmarket vergibt derzeit keinen neuen API-Zugang,
+Jarvis weist dich darauf hin, wenn so eine Bestellung als Brief eingetragen wird. Cardmarket vergibt derzeit keinen neuen API-Zugang,
 deshalb trägst du Bestellungen per Sprache ein. Geplant: Jarvis liest die Bestellmails von Cardmarket aus
 einem eigenen Postfach (IMAP) und trägt sie selbst ein.
 
