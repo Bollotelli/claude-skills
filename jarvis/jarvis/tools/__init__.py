@@ -18,6 +18,7 @@ from ..config import Settings
 from .cardmarket import VIEWS, SalesBook, status_word
 from .memory import Memory
 from .notes import Notes
+from .pricing import PLATFORMS, PriceCalculator
 from .reminders import Reminders, parse_time
 from .skills import SkillLibrary
 from .tasks import TaskList
@@ -139,6 +140,9 @@ class Toolbox:
         self.skills = SkillLibrary(settings.skills_dir)
         self.weather = Weather(settings.location)
         self.trades = TradeBook(data / "trading.json")
+        self.pricing = PriceCalculator(
+            settings.filament_eur_per_kg, settings.electricity_eur_per_kwh, settings.printer_watts, settings.packaging_eur
+        )
         self.cardmarket = SalesBook(
             data / "cardmarket.json", self.reminders, settings.tz(), settings.cardmarket_ship_days
         )
@@ -366,6 +370,17 @@ class Toolbox:
             return self.cardmarket.report(args.get("month", ""))
         except ValueError as exc:
             raise ToolError(f"Ungültiger Monat: {args.get('month')} (erwartet JJJJ-MM).") from exc
+
+    def _print_price(self, args: dict) -> str:
+        platform = args.get("platform", "etsy").strip().lower()
+        platform = {"website": "shop", "eigener shop": "shop", "webseite": "shop", "bar": "direkt"}.get(platform, platform)
+        if platform not in PLATFORMS:
+            raise ToolError(f"Unbekannte Plattform „{args['platform']}“. Möglich: {', '.join(PLATFORMS)}.")
+        return self.pricing.report(
+            args["grams"], args["print_hours"], platform, args.get("price"), args.get("shipping_charged", 0.0),
+            args.get("postage", 0.0), args.get("purge_grams", 0.0), args.get("work_minutes", 10.0),
+            args.get("target_profit", 3.0),
+        )
 
     def _find_skills(self, args: dict) -> str:
         if not self.skills.index():
@@ -602,6 +617,24 @@ class Toolbox:
                 "revenue, earnings or how sales are going.",
                 _obj({"month": {"type": "string", "description": "YYYY-MM; default is the current month."}}),
                 self._cm_report,
+            ),
+            Tool(
+                "print_price",
+                "Calculate what one 3D-printed product costs (filament, electricity, wear, packaging), the platform "
+                "fees and the profit, or suggest a price. Call this when the user asks what a print costs, what to "
+                "charge, or whether a product is worth selling. Grams and print hours come from the slicer.",
+                _obj({
+                    "grams": {"type": "number", "minimum": 0.1, "description": "Filament per piece in grams."},
+                    "print_hours": {"type": "number", "minimum": 0.01, "description": "Print time per piece in hours."},
+                    "platform": {"type": "string", "enum": list(PLATFORMS)},
+                    "price": {"type": "number", "minimum": 0.01, "description": "Planned price in euros; omit for a suggestion."},
+                    "shipping_charged": {"type": "number", "minimum": 0, "description": "Shipping the buyer pays, in euros."},
+                    "postage": {"type": "number", "minimum": 0, "description": "Postage the seller pays, in euros."},
+                    "purge_grams": {"type": "number", "minimum": 0, "description": "Purge waste for multicolor prints."},
+                    "work_minutes": {"type": "number", "minimum": 0, "description": "Packing and handling time per order."},
+                    "target_profit": {"type": "number", "minimum": 0, "description": "Desired profit per piece, default 3 €."},
+                }, ("grams", "print_hours")),
+                self._print_price,
             ),
             Tool(
                 "find_skills",

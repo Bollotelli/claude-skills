@@ -99,6 +99,12 @@ class Settings:
     # Cardmarket: days after a sale until it should be shipped
     cardmarket_ship_days: int = 2
 
+    # 3D printing price calculation
+    filament_eur_per_kg: float = 20.0
+    electricity_eur_per_kwh: float = 0.35
+    printer_watts: float = 110.0  # Bambu Lab P1S while printing PLA, average
+    packaging_eur: float = 0.50
+
     # Storage
     data_dir: Path = Path.home() / ".jarvis"
     skills_dir: Path = REPO_ROOT
@@ -138,6 +144,10 @@ class Settings:
             input_device=_env("JARVIS_INPUT_DEVICE"),
             output_device=_env("JARVIS_OUTPUT_DEVICE"),
             cardmarket_ship_days=max(0, _env_int("JARVIS_CARDMARKET_VERSANDTAGE", d.cardmarket_ship_days)),
+            filament_eur_per_kg=_env_float("JARVIS_FILAMENT_EURO_KG", d.filament_eur_per_kg),
+            electricity_eur_per_kwh=_env_float("JARVIS_STROMPREIS", d.electricity_eur_per_kwh),
+            printer_watts=_env_float("JARVIS_DRUCKER_WATT", d.printer_watts),
+            packaging_eur=_env_float("JARVIS_VERPACKUNG_EURO", d.packaging_eur),
             data_dir=Path(_env("JARVIS_DATA_DIR", str(d.data_dir))).expanduser(),
             skills_dir=Path(_env("JARVIS_SKILLS_DIR", str(d.skills_dir))).expanduser(),
         )

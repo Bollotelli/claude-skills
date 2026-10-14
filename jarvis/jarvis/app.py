@@ -28,7 +28,7 @@ TOOL_LABELS = {
     "set_reminder": "Erinnerungen", "list_reminders": "Erinnerungen", "cancel_reminder": "Erinnerungen",
     "open_website": "Browser", "trade_add": "Trading", "trade_update": "Trading", "trade_overview": "Trading",
     "cardmarket_add_order": "Cardmarket", "cardmarket_update_order": "Cardmarket", "cardmarket_orders": "Cardmarket",
-    "cardmarket_report": "Cardmarket", "find_skills": "Playbooks", "read_skill_file": "Playbooks",
+    "cardmarket_report": "Cardmarket", "print_price": "Kalkulation", "find_skills": "Playbooks", "read_skill_file": "Playbooks",
     "web_search": "Websuche",
 }
 FILLERS = ["Einen Moment.", "Ich sehe nach.", "Sofort.", "Einen Augenblick."]

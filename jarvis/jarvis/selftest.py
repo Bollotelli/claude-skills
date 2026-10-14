@@ -316,6 +316,27 @@ def check_cardmarket_matching(data_dir: Path) -> None:
     })["content"]
 
 
+def check_pricing(data_dir: Path) -> None:
+    from .config import Settings
+    from .tools import Toolbox
+    from .tools.pricing import PLATFORMS, nice_price
+
+    assert (nice_price(7.12), nice_price(7.9), nice_price(7.95)) == (7.9, 7.9, 8.9)
+    toolbox = Toolbox(Settings(data_dir=data_dir))
+    calc = toolbox.pricing
+    costs = calc.costs(30, 1.5)  # 20 €/kg, 110 W, 0,35 €/kWh, 0,10 €/h wear, 10 % buffer
+    assert round(costs.material, 2) == 0.60 and round(costs.production, 4) == 0.8735, costs
+
+    direct = toolbox.run("print_price", "t", {"grams": "30", "print_hours": "1,5", "platform": "bar", "price": 5})
+    assert "Gewinn 3,63 €" in direct["content"], direct
+    for key, platform in PLATFORMS.items():  # every suggestion leaves at least the target profit
+        price = nice_price(calc.suggest(platform, costs, 2.5, 3.0))
+        left = price + 2.5 - calc.fees(platform, price, 2.5) - costs.total
+        assert 3.0 <= left < 3.0 + 1.0 + 0.01, (key, price, left)
+    assert "Preisvorschlag auf Etsy" in toolbox.run("print_price", "t", {"grams": 30, "print_hours": 1.5})["content"]
+    assert toolbox.run("print_price", "t", {"grams": 30, "print_hours": 1, "platform": "amazon"})["is_error"]
+
+
 def check_skills() -> None:
     from .config import REPO_ROOT
     from .tools.skills import SkillLibrary
@@ -574,6 +595,7 @@ CHECKS = [
     ("Trading-Notizbuch (EA FC, 5 % Steuer)", check_trading),
     ("Cardmarket: Bestellungen, Versandfrist, Monatsumsatz", check_cardmarket),
     ("Cardmarket: richtige Bestellung finden, Statuswechsel", check_cardmarket_matching),
+    ("Druck-Kalkulation: Kosten, Gebühren, Preisvorschlag", check_pricing),
     ("Skill-Bibliothek durchsuchen", lambda d: check_skills()),
     ("Skill-Beschreibungen einlesen (YAML)", lambda d: check_frontmatter()),
     ("Wetter-Zusammenfassung", lambda d: check_weather_format()),
