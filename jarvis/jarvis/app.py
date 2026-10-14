@@ -19,7 +19,7 @@ from .speech import SentenceChunker, SilentSpeaker, Speaker
 from .tools import Toolbox
 from .tts import create_tts
 
-THEME = Theme({"jarvis": "bold red", "user": "bold green", "hint": "dim", "warn": "yellow", "err": "bold red"})
+THEME = Theme({"jarvis": "bold red", "user": "bold green", "hint": "dim", "warn": "yellow", "err": "bold white on red"})
 
 TOOL_LABELS = {
     "get_weather": "Wetter", "add_task": "Aufgaben", "list_tasks": "Aufgaben", "complete_task": "Aufgaben",
