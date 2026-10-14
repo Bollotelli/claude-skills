@@ -200,6 +200,24 @@ def check_tools(data_dir: Path) -> None:
     assert list(data_dir.glob("aufgaben.defekt-*.json")), "damaged file was not kept"
 
 
+def check_trading(data_dir: Path) -> None:
+    from .config import Settings
+    from .tools import Toolbox
+
+    toolbox = Toolbox(Settings(data_dir=data_dir))
+    added = toolbox.run("trade_add", "t", {"item": "Mbappé TOTW", "buy_price": 15000, "target_price": 22000})["content"]
+    assert "Break-even 15.790" in added and "Ziel 22.000 (+5.900)" in added, added
+    now = toolbox.run("trade_update", "t", {"trade_id": 1, "current_price": 18000})["content"]
+    assert "aktuell 18.000 (+2.100)" in now, now
+    sold = toolbox.run("trade_update", "t", {"trade_id": 1, "sold_price": 20000})["content"]
+    assert "Gewinn nach EA-Steuer +4.000" in sold, sold
+    toolbox.run("trade_add", "t", {"item": "Gold-Fitness", "buy_price": "800", "quantity": 10})
+    overview = toolbox.run("trade_overview", "t", {})["content"]
+    assert "1 offen, eingesetzt 8.000" in overview and "+4.000" in overview, overview
+    assert toolbox.run("trade_update", "t", {"trade_id": 9, "sold_price": 1})["is_error"]
+    assert toolbox.run("trade_update", "t", {"trade_id": 2})["is_error"]
+
+
 def check_skills() -> None:
     from .config import REPO_ROOT
     from .tools.skills import SkillLibrary
@@ -455,6 +473,7 @@ CHECKS = [
     ("Satzerkennung & Sprachtext-Bereinigung", lambda d: check_chunker()),
     ("Eingabe-Validierung der Werkzeuge", lambda d: check_validation()),
     ("Aufgaben, Notizen, Gedächtnis, Erinnerungen", check_tools),
+    ("Trading-Notizbuch (EA FC, 5 % Steuer)", check_trading),
     ("Skill-Bibliothek durchsuchen", lambda d: check_skills()),
     ("Skill-Beschreibungen einlesen (YAML)", lambda d: check_frontmatter()),
     ("Wetter-Zusammenfassung", lambda d: check_weather_format()),

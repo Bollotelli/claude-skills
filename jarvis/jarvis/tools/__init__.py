@@ -20,6 +20,7 @@ from .notes import Notes
 from .reminders import Reminders, parse_time
 from .skills import SkillLibrary
 from .tasks import TaskList
+from .trading import TradeBook
 from .weather import Weather
 from .web import WebError, WebSearch
 
@@ -133,6 +134,7 @@ class Toolbox:
         self.reminders = Reminders(data / "erinnerungen.json", settings.tz())
         self.skills = SkillLibrary(settings.skills_dir)
         self.weather = Weather(settings.location)
+        self.trades = TradeBook(data / "trading.json")
         self.web = WebSearch(f"{settings.country.lower()}-{settings.language.lower()}")
         self._tools = {tool.name: tool for tool in self._build()}
 
@@ -297,6 +299,24 @@ class Toolbox:
         except WebError as exc:
             raise ToolError(str(exc)) from exc
 
+    def _trade_add(self, args: dict) -> str:
+        trade = self.trades.add(
+            args["item"], args["buy_price"], args.get("quantity", 1), args.get("target_price"), args.get("note", "")
+        )
+        return "Notiert: " + self.trades.describe(trade)
+
+    def _trade_update(self, args: dict) -> str:
+        if "current_price" not in args and "sold_price" not in args:
+            raise ToolError("Gib current_price (aktueller Marktpreis) oder sold_price (verkauft für) an.")
+        try:
+            trade = self.trades.update(args["trade_id"], args.get("current_price"), args.get("sold_price"))
+        except KeyError as exc:
+            raise ToolError(f"Kein Investment mit der Nummer {args['trade_id']}.") from exc
+        return self.trades.describe(trade)
+
+    def _trade_overview(self, args: dict) -> str:
+        return self.trades.overview(args.get("include_closed", False))
+
     def _find_skills(self, args: dict) -> str:
         if not self.skills.index():
             return f"Keine Skill-Bibliothek gefunden unter {self.skills.root}."
@@ -449,6 +469,38 @@ class Toolbox:
                 self._read_webpage,
                 slow=True,
                 web=True,
+            ),
+            Tool(
+                "trade_add",
+                "Record an EA FC Ultimate Team investment the user bought (player card or item, price in coins). "
+                "Call this when the user says they bought something to trade or invest in. Profits are computed "
+                "after the 5 % EA tax. You cannot see live market prices or trade in the game yourself.",
+                _obj({
+                    "item": {**text, "description": "Card or item, e.g. 'Mbappé TOTW' or 'Gold-Fitness'."},
+                    "buy_price": {"type": "integer", "minimum": 1, "description": "Price paid per piece in coins."},
+                    "quantity": {"type": "integer", "minimum": 1},
+                    "target_price": {"type": "integer", "minimum": 1, "description": "Planned selling price per piece."},
+                    "note": {"type": "string", "description": "Why bought, e.g. 'vor SBC am Freitag'."},
+                }, ("item", "buy_price")),
+                self._trade_add,
+            ),
+            Tool(
+                "trade_update",
+                "Update an investment by its id from trade_overview: the current market price the user reports, or "
+                "the price it was sold for (closes the investment and books the profit after EA tax).",
+                _obj({
+                    "trade_id": {"type": "integer", "minimum": 1},
+                    "current_price": {"type": "integer", "minimum": 1},
+                    "sold_price": {"type": "integer", "minimum": 1},
+                }, ("trade_id",)),
+                self._trade_update,
+            ),
+            Tool(
+                "trade_overview",
+                "Show the user's EA FC investments with break-even, target and current profit after the 5 % EA tax, "
+                "plus the realized profit so far. Call this when the user asks how their trades or investments are doing.",
+                _obj({"include_closed": {"type": "boolean", "description": "Also list sold investments."}}),
+                self._trade_overview,
             ),
             Tool(
                 "find_skills",

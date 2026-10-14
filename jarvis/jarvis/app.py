@@ -26,7 +26,7 @@ TOOL_LABELS = {
     "save_note": "Notizen", "search_notes": "Notizen", "read_note": "Notizen",
     "remember": "Gedächtnis", "forget": "Gedächtnis",
     "set_reminder": "Erinnerungen", "list_reminders": "Erinnerungen", "cancel_reminder": "Erinnerungen",
-    "open_website": "Browser", "find_skills": "Playbooks", "read_skill_file": "Playbooks",
+    "open_website": "Browser", "trade_add": "Trading", "trade_update": "Trading", "trade_overview": "Trading", "find_skills": "Playbooks", "read_skill_file": "Playbooks",
     "web_search": "Websuche",
 }
 FILLERS = ["Einen Moment.", "Ich sehe nach.", "Sofort.", "Einen Augenblick."]

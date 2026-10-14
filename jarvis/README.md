@@ -25,6 +25,7 @@ Jarvis:  Erledigt. Ich erinnere Sie morgen um acht Uhr an den Schirm.
 | Websuche und Nachrichten | „Was gibt es Neues zum Thema Gründerzuschuss?“ |
 | Business-Berater mit 355 Experten-Playbooks | „Wie finde ich den richtigen Preis für mein Produkt?“ |
 | Websites öffnen | „Öffne YouTube mit entspannter Musik.“ |
+| Trading-Notizbuch für EA FC Ultimate Team | „Ich habe Mbappé für 15.000 gekauft, Ziel 22.000.“ – „Wie stehen meine Investments?“ |
 
 Jarvis lernt dich kennen: Beim ersten Gespräch fragt er nach deinem Namen und wie du angesprochen werden
 möchtest (Sie oder Du, gern auch „Sir“ wie im Film) und merkt es sich dauerhaft.
@@ -213,6 +214,18 @@ Business-Frage, sucht Jarvis das passende Playbook, liest es und wendet das Fram
 Lange Ergebnisse speichert Jarvis als Notiz und fasst sie mündlich kurz zusammen. Das lokale Modell liest
 lange Playbooks nur in Auszügen (sein Kurzzeitgedächtnis ist kleiner); Claude liest sie vollständig.
 
+## Trading-Notizbuch für EA FC Ultimate Team
+
+Jarvis führt Buch über deine Investments und rechnet Gewinne nach der 5-%-EA-Steuer aus:
+
+- „Ich habe zehn Gold-Fitness für je 800 gekauft.“
+- „Mbappé steht gerade bei 18.000.“ → Jarvis sagt dir den Gewinn nach Steuer und den Break-even.
+- „Mbappé ist für 20.000 verkauft.“ → der Gewinn wird verbucht.
+- „Wie stehen meine Investments?“ oder „Such nach aktuellen Investment-Tipps für FC 27.“ (Websuche)
+
+Wichtig: Jarvis sieht keine Live-Preise und handelt nicht selbst im Spiel. Automatisches Handeln verstößt
+gegen die EA-Regeln und kann zur Sperre deines Accounts führen. Tipps aus dem Netz sind Spekulation.
+
 ## Deine Daten
 
 Alles Persönliche liegt als einfache Dateien in `~/.jarvis/` auf deinem Rechner und lässt sich mit jedem
@@ -224,6 +237,7 @@ Editor öffnen oder sichern:
 | `aufgaben.json` | deine Aufgabenliste |
 | `erinnerungen.json` | Erinnerungen und Timer |
 | `notizen/*.md` | Notizen als Markdown (passt z. B. zu Obsidian) |
+| `trading.json` | dein Trading-Notizbuch |
 
 **Was den Rechner verlässt:** Mit dem kostenlosen lokalen Gehirn bleiben deine Gespräche auf deinem Rechner.
 Ins Internet gehen nur Suchanfragen (an die Suchmaschinen), der Ort für das Wetter (an Open-Meteo) und – mit
