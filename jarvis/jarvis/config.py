@@ -88,6 +88,8 @@ class Settings:
     # Voice input
     stt: str = "local"  # local (faster-whisper) | openai
     whisper_model: str = "small"
+    # cpu keeps the graphics card free for the brain and needs no CUDA/cuDNN install
+    whisper_device: str = "cpu"
     openai_api_key: str = ""
     openai_stt_model: str = "whisper-1"
     wake_threshold: float = 0.5
@@ -126,6 +128,7 @@ class Settings:
             piper_model=_env("JARVIS_PIPER_MODEL"),
             stt=_env("JARVIS_STT", d.stt).lower(),
             whisper_model=_env("JARVIS_WHISPER_MODEL", d.whisper_model),
+            whisper_device=_env("JARVIS_WHISPER_DEVICE", d.whisper_device).lower(),
             openai_api_key=_env("OPENAI_API_KEY"),
             openai_stt_model=_env("JARVIS_OPENAI_STT_MODEL", d.openai_stt_model),
             wake_threshold=_env_float("JARVIS_WAKE_THRESHOLD", d.wake_threshold),

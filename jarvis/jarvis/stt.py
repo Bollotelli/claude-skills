@@ -30,12 +30,12 @@ def clean_transcript(text: str) -> str:
 
 
 class LocalWhisper:
-    def __init__(self, model_size: str, language: str):
+    def __init__(self, model_size: str, language: str, device: str = "cpu"):
         try:
             from faster_whisper import WhisperModel
         except ImportError as exc:
             raise AudioUnavailable("Spracherkennung fehlt: pip install -r requirements.txt") from exc
-        self.model = WhisperModel(model_size, device="auto", compute_type="int8")
+        self.model = WhisperModel(model_size, device=device, compute_type="int8")
         self.language = language
 
     def transcribe(self, audio: np.ndarray) -> str:
@@ -70,4 +70,4 @@ class OpenAITranscriber:
 def create_stt(settings: Settings):
     if settings.stt == "openai":
         return OpenAITranscriber(settings.openai_api_key, settings.openai_stt_model, settings.language)
-    return LocalWhisper(settings.whisper_model, settings.language)
+    return LocalWhisper(settings.whisper_model, settings.language, settings.whisper_device)
