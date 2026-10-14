@@ -10,11 +10,12 @@ from __future__ import annotations
 import json
 import webbrowser
 from dataclasses import dataclass
-from datetime import timedelta, timezone
+from datetime import date, timedelta, timezone
 from typing import Any, Callable
 
 from .. import timefmt
 from ..config import Settings
+from .cardmarket import VIEWS, SalesBook, status_word
 from .memory import Memory
 from .notes import Notes
 from .reminders import Reminders, parse_time
@@ -109,8 +110,8 @@ def coerce(args: Any, schema: dict) -> Any:
             continue  # unknown key
         kind = sub.get("type")
         if kind in ("integer", "number") and isinstance(value, str):
-            try:
-                value = int(value) if kind == "integer" else float(value)
+            try:  # "12,50" is how a German speaker writes 12.50
+                value = int(value) if kind == "integer" else float(value.replace(",", "."))
             except ValueError:
                 pass
         if kind == "integer" and isinstance(value, float) and value.is_integer():
@@ -135,6 +136,9 @@ class Toolbox:
         self.skills = SkillLibrary(settings.skills_dir)
         self.weather = Weather(settings.location)
         self.trades = TradeBook(data / "trading.json")
+        self.cardmarket = SalesBook(
+            data / "cardmarket.json", self.reminders, settings.tz(), settings.cardmarket_ship_days
+        )
         self.web = WebSearch(f"{settings.country.lower()}-{settings.language.lower()}")
         self._tools = {tool.name: tool for tool in self._build()}
 
@@ -316,6 +320,49 @@ class Toolbox:
 
     def _trade_overview(self, args: dict) -> str:
         return self.trades.overview(args.get("include_closed", False))
+
+    def _cm_add(self, args: dict) -> str:
+        ship_by = None
+        if args.get("ship_by", "").strip():
+            try:
+                ship_by = date.fromisoformat(args["ship_by"].strip()[:10])
+            except ValueError as exc:
+                raise ToolError(f"Ungültiges Datum: {args['ship_by']} (erwartet JJJJ-MM-TT).") from exc
+        try:
+            order, warnings = self.cardmarket.add(
+                args["items"], args["price"], args.get("order_no", ""), args.get("buyer", ""),
+                args.get("shipping_method", "Brief"), args.get("shipping_paid"), ship_by, args.get("note", ""),
+            )
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+        lines = ["Eingetragen: " + self.cardmarket.describe(order)]
+        if order.get("reminder_id"):
+            lines.append(f"Erinnerung #{order['reminder_id']} für die Versandfrist ist gesetzt.")
+        return "\n".join(lines + warnings)
+
+    def _cm_update(self, args: dict) -> str:
+        if not any(key in args for key in ("status", "tracking", "postage", "note")):
+            raise ToolError("Gib an, was sich ändert: status, tracking, postage oder note.")
+        try:
+            status = status_word(args["status"]) if args.get("status") else None
+            order = self.cardmarket.update(
+                args["order"], status, args.get("tracking"), args.get("postage"), args.get("note")
+            )
+        except (ValueError, LookupError) as exc:
+            raise ToolError(str(exc)) from exc
+        return "Aktualisiert: " + self.cardmarket.describe(order)
+
+    def _cm_orders(self, args: dict) -> str:
+        view = args.get("view", "zu_versenden").strip().lower().replace(" ", "_")
+        if view not in VIEWS:
+            view = "zu_versenden"
+        return self.cardmarket.listing(view, args.get("query", ""))
+
+    def _cm_report(self, args: dict) -> str:
+        try:
+            return self.cardmarket.report(args.get("month", ""))
+        except ValueError as exc:
+            raise ToolError(f"Ungültiger Monat: {args.get('month')} (erwartet JJJJ-MM).") from exc
 
     def _find_skills(self, args: dict) -> str:
         if not self.skills.index():
@@ -501,6 +548,57 @@ class Toolbox:
                 "plus the realized profit so far. Call this when the user asks how their trades or investments are doing.",
                 _obj({"include_closed": {"type": "boolean", "description": "Also list sold investments."}}),
                 self._trade_overview,
+            ),
+            Tool(
+                "cardmarket_add_order",
+                "Record a new Cardmarket sale the user has to ship (trading cards, e.g. Pokémon). Call this when "
+                "the user reports a new or paid order. The shipping deadline and a reminder for it are set "
+                "automatically. Prices in euros.",
+                _obj({
+                    "items": {**text, "description": "Sold cards, e.g. 'Glurak ex 199/165, Pikachu V'."},
+                    "price": {"type": "number", "minimum": 0.01, "description": "Article value in euros, without shipping."},
+                    "order_no": {"type": "string", "description": "Cardmarket order number, if known."},
+                    "buyer": {"type": "string", "description": "Buyer's Cardmarket name."},
+                    "shipping_method": {"type": "string", "enum": ["Brief", "Einschreiben", "Paket"]},
+                    "shipping_paid": {"type": "number", "minimum": 0, "description": "Shipping the buyer paid, in euros."},
+                    "ship_by": {"type": "string", "description": "Deadline YYYY-MM-DD, only if the user names one."},
+                    "note": {"type": "string"},
+                }, ("items", "price")),
+                self._cm_add,
+            ),
+            Tool(
+                "cardmarket_update_order",
+                "Update a Cardmarket order: mark it shipped with the tracking number (Sendungsnummer) of the stamp "
+                "or registered letter, which also cancels its shipping reminder; mark it arrived or cancelled; or "
+                "add the postage paid or a note. Identify the order by its Jarvis number, Cardmarket order number, "
+                "buyer or a card name.",
+                _obj({
+                    "order": {**text, "description": "e.g. '3', the Cardmarket number, the buyer or a card name."},
+                    "status": {"type": "string", "enum": ["versendet", "angekommen", "storniert", "offen"]},
+                    "tracking": {"type": "string", "description": "Tracking number from the stamp or receipt."},
+                    "postage": {"type": "number", "minimum": 0, "description": "Postage the user paid, in euros."},
+                    "note": {"type": "string"},
+                }, ("order",)),
+                self._cm_update,
+            ),
+            Tool(
+                "cardmarket_orders",
+                "List Cardmarket orders. view 'zu_versenden' (default) answers 'what do I have to ship today?' "
+                "with deadlines, overdue first; 'unterwegs' lists shipped orders not yet confirmed as arrived; "
+                "'alle' lists recent orders. query filters by buyer, card, order or tracking number.",
+                _obj({
+                    "view": {"type": "string", "enum": list(VIEWS)},
+                    "query": {"type": "string"},
+                }),
+                self._cm_orders,
+            ),
+            Tool(
+                "cardmarket_report",
+                "Monthly Cardmarket sales report: number of sales, article value, shipping paid by buyers, "
+                "Cardmarket's 5 % commission, postage and what is left. Call this when the user asks about "
+                "revenue, earnings or how sales are going.",
+                _obj({"month": {"type": "string", "description": "YYYY-MM; default is the current month."}}),
+                self._cm_report,
             ),
             Tool(
                 "find_skills",

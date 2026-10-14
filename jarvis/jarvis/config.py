@@ -96,6 +96,9 @@ class Settings:
     input_device: str = ""
     output_device: str = ""
 
+    # Cardmarket: days after a sale until it should be shipped
+    cardmarket_ship_days: int = 2
+
     # Storage
     data_dir: Path = Path.home() / ".jarvis"
     skills_dir: Path = REPO_ROOT
@@ -134,6 +137,7 @@ class Settings:
             wake_threshold=_env_float("JARVIS_WAKE_THRESHOLD", d.wake_threshold),
             input_device=_env("JARVIS_INPUT_DEVICE"),
             output_device=_env("JARVIS_OUTPUT_DEVICE"),
+            cardmarket_ship_days=_env_int("JARVIS_CARDMARKET_VERSANDTAGE", d.cardmarket_ship_days),
             data_dir=Path(_env("JARVIS_DATA_DIR", str(d.data_dir))).expanduser(),
             skills_dir=Path(_env("JARVIS_SKILLS_DIR", str(d.skills_dir))).expanduser(),
         )

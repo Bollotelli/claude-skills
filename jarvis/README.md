@@ -26,6 +26,7 @@ Jarvis:  Erledigt. Ich erinnere Sie morgen um acht Uhr an den Schirm.
 | Business-Berater mit 355 Experten-Playbooks | „Wie finde ich den richtigen Preis für mein Produkt?“ |
 | Websites öffnen | „Öffne YouTube mit entspannter Musik.“ |
 | Trading-Notizbuch für EA FC Ultimate Team | „Ich habe Mbappé für 15.000 gekauft, Ziel 22.000.“ – „Wie stehen meine Investments?“ |
+| Cardmarket-Verkäufe mit Versandfristen | „Neue Bestellung: Glurak ex für 12,50 an PokeFan.“ – „Was muss ich heute verschicken?“ |
 
 Jarvis lernt dich kennen: Beim ersten Gespräch fragt er nach deinem Namen und wie du angesprochen werden
 möchtest (Sie oder Du, gern auch „Sir“ wie im Film) und merkt es sich dauerhaft.
@@ -226,6 +227,26 @@ Jarvis führt Buch über deine Investments und rechnet Gewinne nach der 5-%-EA-S
 Wichtig: Jarvis sieht keine Live-Preise und handelt nicht selbst im Spiel. Automatisches Handeln verstößt
 gegen die EA-Regeln und kann zur Sperre deines Accounts führen. Tipps aus dem Netz sind Spekulation.
 
+## Cardmarket-Verkäufe
+
+Jarvis führt Buch über deine Cardmarket-Bestellungen, erinnert dich an die Versandfrist und merkt sich die
+Sendungsnummer jeder Sendung:
+
+- „Neue Cardmarket-Bestellung 1187654321: Glurak ex für 12,50 Euro an PokeFan, Versand 1,25.“ → Jarvis trägt sie
+  ein und stellt eine Erinnerung für den Fristtag (9 Uhr).
+- „Was muss ich heute verschicken?“ → offene Bestellungen nach Frist sortiert, Überfälliges zuerst.
+- „Die Bestellung von PokeFan ist raus, Sendungsnummer A0 0123 4567 8DE, Porto 95 Cent.“ → als versendet
+  markiert, die Fristerinnerung entfällt. Die Sendungsnummer ist dein Versandbeleg.
+- „Was ist noch unterwegs?“ – „PokeFan hat seine Karte bekommen.“ – „Bestellung von Sammler ist storniert.“
+- „Wie lief Cardmarket im Oktober?“ → Verkäufe, Artikelwert, Versand, 5 % Cardmarket-Provision, Porto und
+  was übrig bleibt (ohne deinen Einkaufspreis der Karten).
+
+Die Frist ist standardmäßig zwei Tage nach dem Eintragen (fällt sie auf einen Sonntag, gilt Montag);
+ändern mit `JARVIS_CARDMARKET_VERSANDTAGE`. Über 25 € Warenwert schreibt Cardmarket Einschreiben vor –
+Jarvis weist dich darauf hin, wenn du „Brief“ sagst. Cardmarket vergibt derzeit keinen neuen API-Zugang,
+deshalb trägst du Bestellungen per Sprache ein. Geplant: Jarvis liest die Bestellmails von Cardmarket aus
+einem eigenen Postfach (IMAP) und trägt sie selbst ein.
+
 ## Deine Daten
 
 Alles Persönliche liegt als einfache Dateien in `~/.jarvis/` auf deinem Rechner und lässt sich mit jedem
@@ -238,6 +259,7 @@ Editor öffnen oder sichern:
 | `erinnerungen.json` | Erinnerungen und Timer |
 | `notizen/*.md` | Notizen als Markdown (passt z. B. zu Obsidian) |
 | `trading.json` | dein Trading-Notizbuch |
+| `cardmarket.json` | deine Cardmarket-Bestellungen mit Sendungsnummern |
 
 **Was den Rechner verlässt:** Mit dem kostenlosen lokalen Gehirn bleiben deine Gespräche auf deinem Rechner.
 Ins Internet gehen nur Suchanfragen (an die Suchmaschinen), der Ort für das Wetter (an Open-Meteo) und – mit
@@ -321,8 +343,9 @@ Eine neue Fähigkeit hinzufügen heißt: eine Methode und einen `Tool`-Eintrag i
 
 1. **Kalender und E-Mail** (Google oder Microsoft): „Was steht morgen an?“, „Fasse meine ungelesenen Mails zusammen.“
 2. **Jarvis aufs Handy** über einen Telegram-Bot oder einen iPhone-Kurzbefehl.
-3. **Smart Home** über Home Assistant: „Licht im Büro an.“
-4. **Unterbrechen beim Sprechen:** einfach dazwischenreden.
-5. **Morgenbriefing:** Wetter, Termine, Aufgaben und Nachrichten in einer Minute.
-6. **Business-Werkzeuge:** Kundenliste, Angebote und Rechnungen, Kennzahlen deines Business.
-7. **Iron-Man-Oberfläche** im Browser mit animiertem Jarvis-Kreis.
+3. **Cardmarket-Bestellmails automatisch einlesen** (IMAP-Postfach, z. B. GMX oder Gmail).
+4. **Smart Home** über Home Assistant: „Licht im Büro an.“
+5. **Unterbrechen beim Sprechen:** einfach dazwischenreden.
+6. **Morgenbriefing:** Wetter, Termine, Aufgaben und Nachrichten in einer Minute.
+7. **Business-Werkzeuge:** Kundenliste, Angebote und Rechnungen, Kennzahlen deines Business.
+8. **Iron-Man-Oberfläche** im Browser mit animiertem Jarvis-Kreis.

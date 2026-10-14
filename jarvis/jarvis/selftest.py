@@ -218,6 +218,56 @@ def check_trading(data_dir: Path) -> None:
     assert toolbox.run("trade_update", "t", {"trade_id": 2})["is_error"]
 
 
+def check_cardmarket(data_dir: Path) -> None:
+    from datetime import date
+
+    from .config import Settings
+    from .tools import Toolbox
+    from .tools.cardmarket import commission, deadline, euro
+
+    assert euro(1234.5) == "1.234,50 €" and commission(12.0) == 0.6 and commission(12.5) == 0.63
+    assert deadline(date(2026, 10, 16), 2) == date(2026, 10, 19)  # Sunday moves to Monday
+
+    toolbox = Toolbox(Settings(data_dir=data_dir))
+
+    def run(name: str, args: dict) -> dict:
+        return toolbox.run(name, "t", args)
+
+    added = run("cardmarket_add_order", {
+        "items": "Glurak ex 199/165", "price": "12,50", "order_no": "1234567890", "buyer": "PokeFan",
+        "shipping_paid": 1.25,
+    })["content"]
+    assert "12,50 € + 1,25 € Versand, Brief" in added and "Erinnerung #1" in added, added
+    assert "Cardmarket" in toolbox.reminders.pending()[0]["text"]
+    assert run("cardmarket_add_order", {"items": "x", "price": 1, "order_no": "1234567890"})["is_error"]
+    pricey = run("cardmarket_add_order", {"items": "Pikachu Illustrator", "price": 30, "buyer": "Sammler"})["content"]
+    assert "Einschreiben" in pricey, pricey
+    late = run("cardmarket_add_order", {"items": "Pikachu V", "price": 5, "ship_by": "2020-01-01"})["content"]
+    assert "vorbei" in late and "Erinnerung" not in late, late
+    assert len(toolbox.reminders.pending()) == 2
+
+    todo = run("cardmarket_orders", {})["content"]
+    assert todo.startswith("3 Bestellungen zu verschicken, davon 1 überfällig") and "Glurak" in todo, todo
+    assert "Mehrere" in run("cardmarket_update_order", {"order": "pikachu", "status": "versendet"})["content"]
+    assert run("cardmarket_update_order", {"order": "PokeFan", "status": "quatsch"})["is_error"]
+    assert run("cardmarket_update_order", {"order": "PokeFan"})["is_error"]
+
+    shipped = run("cardmarket_update_order", {"order": "PokeFan", "tracking": "A0012345678", "postage": 0.95})["content"]
+    assert "versendet am" in shipped and "Sendungsnummer A0012345678" in shipped, shipped
+    assert len(toolbox.reminders.pending()) == 1, "shipping must cancel the deadline reminder"
+    assert "Sendungsnummer A0012345678" in run("cardmarket_orders", {"view": "unterwegs"})["content"]
+    run("cardmarket_update_order", {"order": "Sammler", "status": "abgebrochen"})
+    assert len(toolbox.reminders.pending()) == 0
+    assert "angekommen" in run("cardmarket_update_order", {"order": "Glurak", "status": "angekommen"})["content"]
+
+    report = run("cardmarket_report", {})["content"]
+    # 12,50 + 5,00 sold (30 € cancelled): provision 0,63 + 0,25; left 17,50 + 1,25 - 0,88 - 0,95
+    assert "2 Verkäufe, 1 davon noch zu verschicken, 1 storniert" in report, report
+    assert "Provision (5 %) 0,88 €" in report and "Bleibt: 16,92 €" in report, report
+    assert run("cardmarket_report", {"month": "Oktober"})["is_error"]
+    assert "noch keine" in run("cardmarket_report", {"month": "2020-01"})["content"]
+
+
 def check_skills() -> None:
     from .config import REPO_ROOT
     from .tools.skills import SkillLibrary
@@ -474,6 +524,7 @@ CHECKS = [
     ("Eingabe-Validierung der Werkzeuge", lambda d: check_validation()),
     ("Aufgaben, Notizen, Gedächtnis, Erinnerungen", check_tools),
     ("Trading-Notizbuch (EA FC, 5 % Steuer)", check_trading),
+    ("Cardmarket: Bestellungen, Versandfrist, Monatsumsatz", check_cardmarket),
     ("Skill-Bibliothek durchsuchen", lambda d: check_skills()),
     ("Skill-Beschreibungen einlesen (YAML)", lambda d: check_frontmatter()),
     ("Wetter-Zusammenfassung", lambda d: check_weather_format()),
