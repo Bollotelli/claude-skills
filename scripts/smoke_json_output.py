@@ -46,6 +46,7 @@ EXCLUDE_DIRS = {
     ".git", ".codex", ".gemini", ".hermes", ".vibe", "docs", "audit",
     "node_modules", "integrations", "eval-workspace", "site",
     "__pycache__", ".venv", "venv",
+    "jarvis",  # standalone voice-assistant app (has its own selftest)
 }
 EXCEPTIONS_FILE = os.path.join(REPO_ROOT, "scripts", "smoke_exceptions.txt")
 

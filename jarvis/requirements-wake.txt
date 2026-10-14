@@ -1,0 +1,2 @@
+# Optional: freihändig mit „Hey Jarvis“ – pip install -r requirements-wake.txt
+openwakeword>=0.6
