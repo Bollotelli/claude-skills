@@ -19,7 +19,7 @@ from .speech import SentenceChunker, SilentSpeaker, Speaker
 from .tools import Toolbox
 from .tts import create_tts
 
-THEME = Theme({"jarvis": "bold cyan", "user": "bold green", "hint": "dim", "warn": "yellow", "err": "bold red"})
+THEME = Theme({"jarvis": "bold red", "user": "bold green", "hint": "dim", "warn": "yellow", "err": "bold red"})
 
 TOOL_LABELS = {
     "get_weather": "Wetter", "add_task": "Aufgaben", "list_tasks": "Aufgaben", "complete_task": "Aufgaben",
@@ -81,7 +81,7 @@ class Jarvis:
             voice = "aus"
         self.console.print(Panel.fit(
             f"[jarvis]J.A.R.V.I.S.[/]\n[hint]Gehirn {escape(self.brain.label)} · Stimme {voice} · Modus {mode}[/]",
-            border_style="cyan",
+            border_style="red",
         ))
 
     def finish_speaking(self) -> None:
@@ -99,7 +99,7 @@ class Jarvis:
         self.console.print("[jarvis]Jarvis:[/] ", end="")
 
         def on_text(delta: str) -> None:
-            self.console.print(delta, end="", style="cyan", markup=False, highlight=False)
+            self.console.print(delta, end="", style="red", markup=False, highlight=False)
             for sentence in chunker.feed(delta):
                 state["spoken"] = True
                 self.speaker.say(sentence)
