@@ -78,11 +78,12 @@ Unter Windows beim Installieren „Add python.exe to PATH“ anhaken.
 herunterladen und starten. Dann im Terminal einmalig:
 
 ```bash
-ollama pull qwen3:8b
+ollama pull qwen3:8b      # bei 8 GB RAM stattdessen: ollama pull qwen3:4b
 ```
 
 **3. Projekt holen** – entweder das Zip-Paket entpacken (den Ordner `jarvis` am besten in deinen
-`claude-skills`-Ordner legen, damit Jarvis die Business-Playbooks findet) oder per git:
+`claude-skills`-Ordner legen, damit Jarvis die Business-Playbooks findet; sonst `JARVIS_SKILLS_DIR` setzen)
+oder per git:
 
 ```bash
 git clone https://github.com/bollotelli/claude-skills.git
@@ -101,6 +102,7 @@ source .venv/bin/activate
 
 # Windows (PowerShell)
 py -m venv .venv
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned   # einmalig, mit „J“ bestätigen
 .venv\Scripts\activate
 
 # danach überall
@@ -108,9 +110,19 @@ pip install -r requirements.txt
 pip install -r requirements-wake.txt   # optional: freihändig mit „Hey Jarvis“
 ```
 
-Linux braucht zusätzlich die Audio-Bibliothek: `sudo apt install libportaudio2`.
+Linux braucht zusätzlich die Audio-Bibliothek: `sudo apt install libportaudio2`. Für „Hey Jarvis“ unter
+Linux bitte Python 3.11 verwenden (die Wake-Word-Erkennung gibt es dort noch nicht für 3.12).
 
-**5. Prüfen, testen, loslegen** – ein API-Schlüssel ist nicht nötig.
+**5. Einstellungen anlegen** – nur nötig, wenn du etwas ändern willst (Ort, Stimme, kleineres Modell):
+
+```bash
+cp .env.example .env        # Windows: copy .env.example .env
+```
+
+Dann in `.env` die gewünschten Zeilen anpassen, z. B. `JARVIS_LOCATION=München` oder bei 8 GB RAM
+`JARVIS_OLLAMA_MODEL=qwen3:4b` (das „#“ am Zeilenanfang entfernen).
+
+**6. Prüfen, testen, loslegen** – ein API-Schlüssel ist nicht nötig.
 
 ```bash
 python -m jarvis check            # ist alles eingerichtet und kostenlos?
@@ -122,8 +134,21 @@ python -m jarvis --wake           # freihändig: „Hey Jarvis, …“
 
 Beim ersten Sprechen lädt Jarvis einmalig das Spracherkennungsmodell (rund 460 MB).
 Auf dem Mac fragt das System nach Mikrofonzugriff für das Terminal – bitte erlauben.
-Eigene Einstellungen (Ort, Stimme, Modell) trägst du in eine Datei `.env` ein: `cp .env.example .env`
-(Windows: `copy .env.example .env`) und die gewünschten Zeilen anpassen.
+
+**Jarvis später wieder starten** – in einem neuen Terminal immer erst in den Ordner wechseln und die
+Umgebung aktivieren:
+
+```bash
+# Mac / Linux
+cd ~/claude-skills/jarvis        # bzw. dein Pfad
+source .venv/bin/activate
+python -m jarvis
+
+# Windows (PowerShell)
+cd $HOME\claude-skills\jarvis
+.venv\Scripts\activate
+python -m jarvis
+```
 
 ## Jarvis' Stimme
 
@@ -152,6 +177,8 @@ Sollte sie einmal nicht gehen, ist Piper die kostenlose Alternative.
 ```bash
 pip install piper-tts
 python -m piper.download_voices --download-dir ~/.jarvis/stimmen de_DE-thorsten-high
+# Windows (PowerShell):
+python -m piper.download_voices --download-dir "$env:USERPROFILE\.jarvis\stimmen" de_DE-thorsten-high
 ```
 
 Dann in `.env`: `JARVIS_TTS=piper` und `JARVIS_PIPER_MODEL=~/.jarvis/stimmen/de_DE-thorsten-high.onnx`.
@@ -170,7 +197,7 @@ nur mit deren Einverständnis klonen.
   Nach der Antwort hört Jarvis ein paar Sekunden weiter zu, Rückfragen gehen also ohne erneutes „Hey Jarvis“.
 - **Text** (`python -m jarvis --text`): tippen; Jarvis antwortet trotzdem mit Stimme (`--stumm` schaltet sie ab).
   Befehle: `/neu` neues Gespräch, `/kosten` Verbrauch, `/gedaechtnis` was Jarvis über dich weiß, `/ende`.
-- **Unterbrechen:** Strg+C stoppt die aktuelle Antwort.
+- **Unterbrechen:** Strg+C stoppt die aktuelle Antwort; ein weiteres Strg+C beendet Jarvis.
 
 ## Business-Modus
 
@@ -217,11 +244,14 @@ Alle Optionen stehen mit Erklärung in [`.env.example`](.env.example). Die wicht
 | `JARVIS_WHISPER_MODEL` | `small` | Spracherkennung: `medium` versteht besser, ist aber langsamer |
 | `JARVIS_WAKE_THRESHOLD` | `0.5` | „Hey Jarvis“: niedriger reagiert leichter |
 | `JARVIS_DATA_DIR` | `~/.jarvis` | Ordner für Gedächtnis, Aufgaben, Notizen |
+| `JARVIS_SKILLS_DIR` | Ordner über `jarvis/` | wo die Business-Playbooks liegen (dein `claude-skills`-Ordner) |
 
 **Optionales Upgrade auf Claude:** Auf [console.anthropic.com](https://console.anthropic.com) Guthaben aufladen
 und einen API-Schlüssel erstellen, dann in `.env`: `JARVIS_BRAIN=claude` und `ANTHROPIC_API_KEY=sk-ant-...`.
-Standardmodell ist Claude Opus 5.5 (etwa 1 Cent pro Wortwechsel, Websuche etwa 1 Cent pro Suche; mit `/kosten`
-siehst du den Verbrauch). Falls Claude eine Anfrage ablehnt, springt automatisch ein Ersatzmodell ein.
+Standardmodell ist Claude Opus 5.5 (etwa 1 Cent pro Wortwechsel; mit `/kosten` siehst du den Verbrauch).
+Claudes Websuche kostet 1 Cent pro Suche plus die gelesenen Suchergebnisse – eine Recherche kann so einige Cent
+kosten; mit `JARVIS_WEB_SEARCH=false` ist sie aus. Falls Claude eine Anfrage ablehnt, springt automatisch ein
+Ersatzmodell ein.
 
 ## Wenn etwas hakt
 
@@ -230,13 +260,17 @@ siehst du den Verbrauch). Falls Claude eine Anfrage ablehnt, springt automatisch
 | „Ollama läuft nicht“ | Ollama-App starten (Mac/Windows) oder `ollama serve` (Linux) |
 | „Modell ist nicht installiert“ | `ollama pull qwen3:8b` (bzw. das Modell aus deiner `.env`) |
 | Antworten kommen sehr langsam | kleineres Modell: `JARVIS_OLLAMA_MODEL=qwen3:4b` |
-| Jarvis vergisst den Anfang langer Gespräche | `JARVIS_OLLAMA_CTX=16384` (braucht mehr RAM) oder `/neu` |
+| Jarvis vergisst den Anfang langer Gespräche | `JARVIS_OLLAMA_CTX=16384` (merkt sich dann mehr, braucht mehr RAM) |
+| „kann keine Werkzeuge nutzen“ | ein Modell mit Werkzeug-Unterstützung nehmen, z. B. `qwen3:4b` oder `qwen3:8b` |
+| „No module named jarvis“ | erst in den Ordner `jarvis` wechseln und die Umgebung aktivieren (siehe „Jarvis später wieder starten“) |
+| Windows: „Ausführung von Skripts … deaktiviert“ | einmalig `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
 | Mac: Jarvis hört nichts | *Systemeinstellungen → Datenschutz & Sicherheit → Mikrofon* → Terminal erlauben |
 | Linux: „PortAudio library not found“ | `sudo apt install libportaudio2` |
 | Jarvis versteht schlecht | `JARVIS_WHISPER_MODEL=medium`, näher ans Mikrofon, ruhigere Umgebung |
 | „Hey Jarvis“ reagiert nicht oder zu oft | `JARVIS_WAKE_THRESHOLD` zwischen `0.3` und `0.7` probieren |
 | „Die Suche ist gerade überlastet“ | kurz warten; die kostenlosen Suchmaschinen begrenzen schnelle Anfragen |
 | Keine Stimme | Internet prüfen oder auf Piper (offline) wechseln |
+| Mac: „CERTIFICATE_VERIFY_FAILED“ beim Herunterladen | im Programme-Ordner „Python 3.x → Install Certificates.command“ ausführen |
 | Pakete lassen sich nicht installieren | Python 3.11 oder 3.12 verwenden |
 
 `python -m jarvis check` zeigt, was fehlt, und `python -m jarvis selbsttest` prüft die Programmlogik offline.

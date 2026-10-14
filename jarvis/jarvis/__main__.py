@@ -24,7 +24,7 @@ SAMPLE = "Guten Tag. Ich bin Jarvis, Ihr persönlicher Assistent. Alle Systeme s
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m jarvis",
-        description="J.A.R.V.I.S. – dein persönlicher Sprachassistent mit Claude.",
+        description="J.A.R.V.I.S. – dein persönlicher Sprachassistent: kostenlos mit lokalem Modell (Ollama), optional mit Claude.",
         epilog=EXAMPLES,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -34,7 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stumm", "--mute", dest="mute", action="store_true", help="Antworten nur anzeigen, nicht vorlesen")
     sub = parser.add_subparsers(dest="command", metavar="befehl")
     check = sub.add_parser("check", aliases=["doctor"], help="Einrichtung prüfen")
-    check.add_argument("--online", action="store_true", help="auch den API-Schlüssel bei Claude prüfen (kostenlos)")
+    check.add_argument("--online", action="store_true", help="nur mit JARVIS_BRAIN=claude: API-Schlüssel online prüfen")
     say = sub.add_parser("sag", aliases=["say"], help="Stimme testen")
     say.add_argument("text", nargs="*", help="was Jarvis sagen soll")
     say.add_argument("--stimme", help="andere edge-Stimme ausprobieren, z. B. de-DE-ConradNeural")

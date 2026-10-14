@@ -23,11 +23,15 @@ def _call(func, *args, **kwargs):
         return func(*args, **kwargs)
     except WebError:
         raise
-    except Exception as exc:  # rate limits, timeouts, no internet
-        name = type(exc).__name__
-        if "Ratelimit" in name:
+    except Exception as exc:  # ddgs raises DDGSException / TimeoutException for everything
+        text = f"{type(exc).__name__} {exc}".lower()
+        if "no results found" in text:
+            return []
+        if any(sign in text for sign in ("ratelimit", "202", "vqd", "document is empty")):
             raise WebError("Die Suche ist gerade überlastet. Bitte gleich noch einmal versuchen.") from exc
-        raise WebError(f"Suche fehlgeschlagen ({name}: {exc})") from exc
+        if "timeout" in text:
+            raise WebError("Die Suche hat zu lange gedauert. Ist das Internet verfügbar?") from exc
+        raise WebError(f"Suche fehlgeschlagen ({exc})") from exc
 
 
 class WebSearch:
@@ -57,7 +61,7 @@ class WebSearch:
     def read(self, url: str) -> str:
         if not url.startswith(("https://", "http://")):
             raise WebError("Nur http(s)-Adressen können gelesen werden.")
-        page = _call(_ddgs().extract, url, fmt="text_markdown")
+        page = _call(_ddgs().extract, url, fmt="text_markdown") or {}
         text = page.get("content", "")
         if isinstance(text, bytes):
             text = text.decode("utf-8", errors="replace")

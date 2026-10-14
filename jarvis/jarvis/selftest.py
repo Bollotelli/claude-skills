@@ -164,8 +164,11 @@ def check_tools(data_dir: Path) -> None:
         return toolbox.run(name, "toolu_test", args)
 
     assert "#1" in run("add_task", {"title": "Steuerberater anrufen"})["content"]
-    assert "Steuerberater" in run("list_tasks", {})["content"]
-    assert run("complete_task", {"task_id": 1}).get("is_error") is None
+    assert "Erledigt" in run("complete_task", {"task_id": "1", "extra": True})["content"]  # coerced
+    run("add_task", {"title": "zweite"})
+    assert "zweite" in run("list_tasks", {})["content"]
+    assert "Steuerberater" in run("list_tasks", {"include_done": True})["content"]
+    assert run("complete_task", {"task_id": 2}).get("is_error") is None
     assert run("complete_task", {"task_id": 7})["is_error"]
     assert run("add_task", {"titel": "falsch"})["is_error"]
     run("save_note", {"title": "Business-Idee", "content": "Kaffee-Abo für Büros"})
@@ -267,16 +270,17 @@ def check_free_web(data_dir: Path) -> None:
     from .config import Settings
     from .tools import Toolbox, web
 
-    class RatelimitException(Exception):
-        pass
+    from ddgs.exceptions import DDGSException
 
     class FakeDDGS:
         def text(self, query, region, max_results):
             assert region == "de-de"
+            if query == "nichts":
+                raise DDGSException("No results found.")  # what ddgs 9 raises for zero hits
             return [{"title": "Gründerzuschuss", "body": "Voraussetzungen 2026", "href": "https://example.org/gz"}]
 
         def news(self, query, region, max_results):
-            raise RatelimitException("202 Ratelimit")
+            raise DDGSException("https://duckduckgo.com 202 Ratelimit")
 
         def extract(self, url, fmt):
             return {"url": url, "content": "Seiteninhalt " * 1000}
@@ -287,6 +291,7 @@ def check_free_web(data_dir: Path) -> None:
         toolbox = Toolbox(Settings(data_dir=data_dir))
         found = toolbox.run("web_search", "t", {"query": "Gründerzuschuss"})
         assert "1. Gründerzuschuss: Voraussetzungen 2026 (https://example.org/gz)" == found["content"], found
+        assert toolbox.run("web_search", "t", {"query": "nichts"})["content"] == "Keine Treffer."
         busy = toolbox.run("news_search", "t", {"query": "KI"})
         assert busy["is_error"] and "überlastet" in busy["content"], busy
         page = toolbox.run("read_webpage", "t", {"url": "https://example.org/gz"})["content"]
@@ -355,6 +360,19 @@ def check_local_conversation(data_dir: Path) -> None:
         assert brain.messages == before, "a failed turn must be rolled back"
     finally:
         fake.close()
+
+    # A model stuck in a tool loop still ends with a spoken answer (final turn without tools)
+    looping = FakeOllama([ollama_stream([], [("list_tasks", {})])] * LocalBrain.MAX_ROUNDS + [ollama_stream(["Ich komme nicht weiter."])])
+    try:
+        stuck = LocalBrain(settings, toolbox, client=ollama.Client(host=looping.url, trust_env=False))
+        assert stuck.respond("Liste?", lambda t: None) == "Ich komme nicht weiter."
+        assert looping.requests[-1]["tools"] == [] or "tools" not in looping.requests[-1]
+        stuck.messages = [{"role": "user", "content": "alt"}, {"role": "assistant", "content": "a"}] + [
+            {"role": "user", "content": "neu"}] + [{"role": "tool", "tool_name": "x", "content": "y"}] * 40
+        stuck._trim()
+        assert stuck.messages[0]["content"] == "neu", "trim must keep the turn just answered"
+    finally:
+        looping.close()
 
     # Ollama not running at all
     import socket

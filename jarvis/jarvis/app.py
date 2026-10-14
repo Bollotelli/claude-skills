@@ -189,7 +189,13 @@ class Jarvis:
         while True:
             try:
                 line = self.console.input("[user]Du:[/] ").strip()
-            except (EOFError, KeyboardInterrupt):
+            except KeyboardInterrupt:
+                if self.speaker.busy:  # Ctrl+C while Jarvis is still talking: just stop the voice
+                    self.speaker.stop()
+                    self.console.print()
+                    continue
+                break
+            except EOFError:
                 break
             if not line:
                 continue

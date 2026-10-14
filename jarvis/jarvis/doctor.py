@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .config import APP_DIR, Settings
-from .local_brain import _is_local_host
+from .local_brain import _is_local_host, normalize_host
 
 OK, FAIL, OPTIONAL = "[green]✓[/]", "[red]✗[/]", "[yellow]–[/]"
 
@@ -30,15 +30,23 @@ def check_local_brain(settings: Settings, add) -> None:
         return
     try:
         extra = {"trust_env": False} if _is_local_host(settings.ollama_host) else {}
-        names = [m.model or "" for m in ollama.Client(host=settings.ollama_host or None, **extra).list().models]
+        client = ollama.Client(host=normalize_host(settings.ollama_host) or None, **extra)
+        names = [m.model or "" for m in client.list().models]
     except Exception:
         add(FAIL, "Gehirn (Ollama)", "Ollama läuft nicht – installieren: https://ollama.com/download, dann die App starten")
         return
     wanted = settings.ollama_model
-    if wanted in names or f"{wanted}:latest" in names:
-        add(OK, "Gehirn (lokal, kostenlos)", f"{wanted} bereit")
-    else:
+    if wanted not in names and f"{wanted}:latest" not in names:
         add(FAIL, "Gehirn (lokal, kostenlos)", f"Modell fehlt – einmalig: ollama pull {wanted}")
+    else:
+        try:
+            capabilities = client.show(wanted).capabilities
+        except Exception:
+            capabilities = None  # older Ollama: no capability list, assume fine
+        if capabilities is not None and "tools" not in capabilities:
+            add(FAIL, "Gehirn (lokal, kostenlos)", f"{wanted} kann keine Werkzeuge nutzen – nimm z. B. qwen3:4b oder qwen3:8b")
+        else:
+            add(OK, "Gehirn (lokal, kostenlos)", f"{wanted} bereit")
     add(OPTIONAL, "API-Schlüssel", "nicht nötig: das lokale Gehirn ist kostenlos")
 
 

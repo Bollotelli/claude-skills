@@ -92,6 +92,37 @@ def validate(value: Any, schema: dict, path: str = "input") -> str | None:
     return None
 
 
+def coerce(args: Any, schema: dict) -> Any:
+    """Repair small slips before validating: numeric strings, out-of-range numbers, unknown keys.
+
+    Open models see only types (the ollama client drops limits like minimum or
+    additionalProperties), so they are corrected here instead of rejected.
+    """
+    if not isinstance(args, dict) or schema.get("type") != "object":
+        return args
+    props = schema.get("properties", {})
+    fixed = {}
+    for key, value in args.items():
+        sub = props.get(key)
+        if sub is None:
+            continue  # unknown key
+        kind = sub.get("type")
+        if kind in ("integer", "number") and isinstance(value, str):
+            try:
+                value = int(value) if kind == "integer" else float(value)
+            except ValueError:
+                pass
+        if kind == "integer" and isinstance(value, float) and value.is_integer():
+            value = int(value)
+        if kind in ("integer", "number") and isinstance(value, (int, float)) and not isinstance(value, bool):
+            if "minimum" in sub:
+                value = max(value, sub["minimum"])
+            if "maximum" in sub:
+                value = min(value, sub["maximum"])
+        fixed[key] = value
+    return fixed
+
+
 class Toolbox:
     def __init__(self, settings: Settings):
         self.settings = settings
@@ -137,6 +168,7 @@ class Toolbox:
         tool = self._tools.get(name)
         if tool is None:
             return {**result, "is_error": True, "content": f"Unbekanntes Werkzeug: {name}"}
+        args = coerce(args, tool.schema)
         problem = validate(args, tool.schema)
         if problem:
             payload = {"INVALID_JSON": json.dumps(args, ensure_ascii=False), "problem": problem}

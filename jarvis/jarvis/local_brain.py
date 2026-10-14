@@ -20,7 +20,6 @@ from .tools import Toolbox
 
 # Families with a reasoning mode that ``think=False`` switches off (faster answers).
 THINKING_FAMILIES = ("qwen3", "deepseek-r1", "magistral")
-MAX_HISTORY = 24  # messages kept; small context windows fill up quickly
 TOOL_RESULT_CHARS = 6000  # keep tool results within the local context window
 
 ToolCallback = Callable[[str, bool], None]
@@ -77,7 +76,21 @@ class ThinkFilter:
         return rest
 
 
+_ANY_ADDRESS = ("", "0.0.0.0", "::")  # server bind addresses (Ollama FAQ), not reachable as a client
+
+
+def normalize_host(host: str) -> str:
+    """Turn OLLAMA_HOST values meant for the server (0.0.0.0, :11434) into a client address."""
+    if not host:
+        return ""
+    parsed = urlparse(host if "://" in host else f"http://{host}")
+    if (parsed.hostname or "") in _ANY_ADDRESS:
+        return f"{parsed.scheme}://127.0.0.1:{parsed.port or 11434}"
+    return host
+
+
 def _is_local_host(host: str) -> bool:
+    host = normalize_host(host)
     if not host:
         return True
     name = urlparse(host if "://" in host else f"http://{host}").hostname or ""
@@ -97,9 +110,10 @@ class LocalBrain:
                 raise LocalModelError("Das Paket 'ollama' fehlt: pip install -r requirements.txt") from exc
             # Never send local traffic through a system proxy.
             extra = {"trust_env": False} if _is_local_host(settings.ollama_host) else {}
-            client = ollama.Client(host=settings.ollama_host or None, **extra)
+            client = ollama.Client(host=normalize_host(settings.ollama_host) or None, **extra)
         self.client = client
         self.usage = LocalUsage()
+        self.max_history = max(12, settings.ollama_ctx // 512)  # 24 messages at the default 12288
         self.messages: list[dict] = []
         self.system = ""
         self.tools: list[dict] = []
@@ -133,19 +147,25 @@ class LocalBrain:
         return reply
 
     def _trim(self) -> None:
-        """Forget the oldest exchanges; the kept history always starts with a user message."""
-        if len(self.messages) <= MAX_HISTORY:
-            return
-        cut = len(self.messages) - MAX_HISTORY
-        while cut < len(self.messages) and self.messages[cut]["role"] != "user":
-            cut += 1
-        del self.messages[:cut]
+        """Forget the oldest exchanges once the history is full.
 
-    def _chat(self):
+        Cuts down to half at a user-message boundary, so the start of the
+        history (and Ollama's cached prompt) changes only every few turns,
+        and never cuts into the exchange that was just answered.
+        """
+        if len(self.messages) <= self.max_history:
+            return
+        last_user = max(i for i, m in enumerate(self.messages) if m["role"] == "user")
+        cut = len(self.messages) - self.max_history // 2
+        while cut < last_user and self.messages[cut]["role"] != "user":
+            cut += 1
+        del self.messages[:min(cut, last_user)]
+
+    def _chat(self, with_tools: bool = True):
         kwargs: dict[str, Any] = {
             "model": self.settings.ollama_model,
             "messages": [{"role": "system", "content": self.system}, *self.messages],
-            "tools": self.tools,
+            "tools": self.tools if with_tools else [],
             "stream": True,
             "options": {"num_ctx": self.settings.ollama_ctx, "temperature": 0.6},
             "keep_alive": "30m",
@@ -154,7 +174,9 @@ class LocalBrain:
             kwargs["think"] = self._think
         return self.client.chat(**kwargs)
 
-    def _stream_once(self, parts: list[str], on_text: Callable[[str], None]) -> tuple[str, list[dict]]:
+    def _stream_once(
+        self, parts: list[str], on_text: Callable[[str], None], with_tools: bool = True
+    ) -> tuple[str, list[dict]]:
         import httpx  # transport of the ollama client
         import ollama
 
@@ -177,7 +199,7 @@ class LocalBrain:
             on_text(piece)
 
         try:
-            for chunk in self._chat():
+            for chunk in self._chat(with_tools):
                 message = chunk.message
                 if message.content:
                     emit(think.feed(message.content))
@@ -190,7 +212,12 @@ class LocalBrain:
         except ollama.ResponseError as exc:
             if self._think is not None and "think" in str(exc.error).lower() and not content:
                 self._think = None  # this model has no switchable reasoning: ask again without it
-                return self._stream_once(parts, on_text)
+                return self._stream_once(parts, on_text, with_tools)
+            if "does not support tools" in str(exc.error).lower():
+                raise LocalModelError(
+                    f"Das Modell '{self.settings.ollama_model}' kann keine Werkzeuge nutzen. "
+                    "Nimm ein Modell mit Werkzeug-Unterstützung, z. B. qwen3:4b oder qwen3:8b."
+                ) from exc
             if exc.status_code == 404:
                 raise LocalModelError(
                     f"Das Modell '{self.settings.ollama_model}' ist nicht installiert. "
@@ -223,4 +250,8 @@ class LocalBrain:
                 if result.get("is_error"):
                     text = f"FEHLER: {text}"
                 self.messages.append({"role": "tool", "tool_name": call["name"], "content": text})
+        # Out of tool rounds (e.g. a small model retrying a failing call): one last
+        # turn without tools, so there is always a spoken answer.
+        content, _ = self._stream_once(parts, on_text, with_tools=False)
+        self.messages.append({"role": "assistant", "content": content})
         return "".join(parts)
